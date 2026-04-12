@@ -1,0 +1,104 @@
+# ============================================================
+# 芯智云匠 MES AI 项目 Gitleaks 配置
+# 文档编号: AI-MES-GIT-2026-001
+# 关联任务: T0-2-3
+# 作者: AI
+# 日期: 2026-04-12
+# 说明: 基于 CLAUDE.md 第四章安全红线定制检测规则
+# ============================================================
+
+title = "芯智云匠 MES AI Gitleaks 配置"
+
+# ============================================================
+# 扩展官方规则集（检测通用密钥、Token、证书等）
+# ============================================================
+[extend]
+useDefault = true
+
+# ============================================================
+# 项目专项规则（CLAUDE.md 4.1 硬编码禁令）
+# ============================================================
+
+# 规则1: 内网 IP 地址硬编码
+[[rules]]
+id          = "mes-hardcode-internal-ip"
+description = "硬编码内网IP地址（CLAUDE.md 4.1 禁止项）"
+regex       = '''(?i)(=\s*["']?)(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})'''
+tags        = ["security", "hardcode", "ip"]
+severity    = "critical"
+  [rules.allowlist]
+  description = "允许注释中的示例IP"
+  regexes     = ['''#.*(\d{1,3}\.){3}\d{1,3}''', '''\/\/.*(\d{1,3}\.){3}\d{1,3}''']
+
+# 规则2: JDBC 数据库连接串
+[[rules]]
+id          = "mes-hardcode-jdbc-url"
+description = "硬编码JDBC数据库连接串（CLAUDE.md 4.1 禁止项）"
+regex       = '''jdbc:(mysql|postgresql|oracle|sqlserver|mariadb)://[^\s"']+'''
+tags        = ["security", "hardcode", "database"]
+severity    = "critical"
+  [rules.allowlist]
+  description = "允许配置模板占位符"
+  regexes     = ['''\$\{[^}]+\}''', '''@\{[^}]+\}''', '''<[^>]+>''']
+
+# 规则3: 厂区特定编号（FAB站点编码）
+[[rules]]
+id          = "mes-hardcode-fab-site"
+description = "硬编码厂区站点编号（CLAUDE.md 4.1 禁止项，应使用 [SITE_PARAM] 占位）"
+regex       = '''\bFAB-[A-Z]{2,6}-\d{2,4}\b'''
+tags        = ["security", "hardcode", "site"]
+severity    = "high"
+
+# 规则4: 员工工号直接字面量
+[[rules]]
+id          = "mes-hardcode-emp-id"
+description = "硬编码员工工号（CLAUDE.md 4.1 禁止项）"
+regex       = '''\b(EMP|emp)\d{6,10}\b'''
+tags        = ["security", "hardcode", "pii"]
+severity    = "high"
+
+# 规则5: 生产批次号直接字面量
+[[rules]]
+id          = "mes-hardcode-lot-no"
+description = "硬编码生产批次号（CLAUDE.md 4.1 禁止项）"
+regex       = '''\bLOT[A-Z]{2}\d{6,12}\b'''
+tags        = ["security", "hardcode", "production"]
+severity    = "high"
+
+# 规则6: 明文数据库密码常见模式
+[[rules]]
+id          = "mes-hardcode-db-password"
+description = "疑似明文数据库密码"
+regex       = '''(?i)(db_password|database_password|db_pwd|mysql_password|spring\.datasource\.password)\s*[=:]\s*["']?[^\s"'$\{@<]{6,}'''
+tags        = ["security", "hardcode", "credential"]
+severity    = "critical"
+  [rules.allowlist]
+  description = "允许引用环境变量或加密占位符"
+  regexes     = ['''\$\{[^}]+\}''', '''\$\([^)]+\)''', '''ENC\([^)]+\)''']
+
+# 规则7: API Key / Secret 常见模式
+[[rules]]
+id          = "mes-hardcode-api-secret"
+description = "疑似硬编码 API Key 或 Secret"
+regex       = '''(?i)(api_key|api_secret|secret_key|access_key|auth_token|claude_api_key|deepseek_api_key)\s*[=:]\s*["']?[A-Za-z0-9\-_]{20,}'''
+tags        = ["security", "hardcode", "credential"]
+severity    = "critical"
+  [rules.allowlist]
+  description = "允许引用环境变量"
+  regexes     = ['''\$\{[^}]+\}''', '''\$\([^)]+\)''', '''System\.getenv''', '''os\.environ''']
+
+# ============================================================
+# 全局白名单（误报排除）
+# ============================================================
+[allowlist]
+description = "全局白名单：排除文档、测试数据、配置模板中的已知误报"
+paths = [
+    '''.gitleaks.toml''',
+    '''docs/.*\.md''',
+    '''.*\.sample''',
+    '''.*_test\.java''',
+    '''.*Test\.java''',
+    '''src/test/.*''',
+    '''assertions/.*''',
+]
+commits = []
