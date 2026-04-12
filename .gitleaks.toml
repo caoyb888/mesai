@@ -99,6 +99,7 @@ paths = [
     '''.*_test\.java''',
     '''.*Test\.java''',
     '''src/test/.*''',
+    '''src/.*/tests/.*\.py''',
     '''assertions/.*''',
 ]
 commits = []
