@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    序列号降级兜底表 SQL 映射
+    文档编号: AI-MES-GIT-2026-001
+    关联任务: T0-2-4
+    关联文档: docs/MES_AI_Database_Design.md 第 8.4 节
+    作者: AI
+    日期: 2026-04-12
+    注意:
+      - 所有 SQL 使用 #{} 参数化查询，禁止 ${} 字符串拼接（防注入）
+      - 禁止 SELECT *，必须明确列出查询字段
+-->
+<mapper namespace="com.xingtong.mesai.module.task.mapper.SeqCounterMapper">
+
+    <!-- 若当日记录不存在则初始化，INSERT IGNORE 防并发重复 -->
+    <insert id="initIfAbsent">
+        INSERT IGNORE INTO ai_seq_counter
+            (seq_key, seq_type, current_val, date_str, description)
+        VALUES
+            (#{seqKey}, #{seqType}, 0, #{dateStr},
+             CONCAT('需求单编号序列（', #{dateStr}, '）'))
+    </insert>
+
+    <!--
+        乐观锁递增：UPDATE 影响行数 > 0 表示成功，= 0 表示并发冲突
+        注：不使用版本号字段，直接用 date_str 作为条件防止跨日误操作
+    -->
+    <update id="incrementAndGet">
+        UPDATE ai_seq_counter
+        SET    current_val = current_val + 1,
+               updated_at  = NOW()
+        WHERE  seq_key  = #{seqKey}
+          AND  date_str = #{dateStr}
+    </update>
+
+    <!-- 查询当前序列值（INCREMENT 成功后调用） -->
+    <select id="getCurrentVal" resultType="long">
+        SELECT current_val
+        FROM   ai_seq_counter
+        WHERE  seq_key = #{seqKey}
+    </select>
+
+</mapper>
