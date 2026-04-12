@@ -38,7 +38,7 @@ Stage 5: 自动部署至测试环境（仅 develop 分支 push 触发）
 | Secret 名称 | 值 | 说明 |
 |------------|---|------|
 | `AI_API_KEY` | Kimi API Key | AI 网关调用密钥（开发阶段） |
-| `SONAR_TOKEN` | `sqp_f8398f8ff729e37b5f221469fced184cf85759c1` | SonarQube 分析 Token |
+| `SONAR_TOKEN` | 见步骤四（从 SonarQube 管理界面生成） | SonarQube 分析 Token |
 | `SONAR_HOST_URL` | `http://<Server-B-IP>:9100` | SonarQube 服务地址（填入 Server B 真实 IP） |
 | `DB_URL` | MySQL 连接串 | AI 平台数据库（格式见 .env.example） |
 | `WECHAT_WEBHOOK_URL` | 企业微信 Webhook | 告警通知（可选） |
