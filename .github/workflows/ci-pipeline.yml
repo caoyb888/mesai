@@ -106,12 +106,7 @@ jobs:
             --cov-fail-under=70 \
             -v
 
-      - name: 上传覆盖率报告
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-report
-          path: ${{ env.AI_GATEWAY_DIR }}/coverage.xml
+      # 覆盖率报告由 Stage 3（self-hosted）直接重新生成，无需跨 runner 传输
 
 # ── Stage 3: SonarQube 代码质量扫描 ──────────────────────────
   sonar-scan:
@@ -125,23 +120,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 下载覆盖率报告
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-report
-          path: ${{ env.AI_GATEWAY_DIR }}
-
-      - name: 修正覆盖率报告中的文件路径
-        # coverage.xml 由 ubuntu-latest runner 生成，其 <source> 元素含有
-        # 云端 runner 的绝对路径（/home/runner/work/...），在 self-hosted runner
-        # 上路径不同，sonar 无法解析文件 → 覆盖率归零 → 质量门禁失败
-        # 替换为当前 workspace 的实际路径即可正确匹配
+      - name: 在本机生成覆盖率报告
+        # 直接在 self-hosted runner 上运行 pytest --cov，生成路径与本机一致
+        # 避免从 ubuntu-latest 下载 coverage.xml 后路径不匹配的问题
+        working-directory: ${{ env.AI_GATEWAY_DIR }}
+        env:
+          AI_PROVIDER: kimi
+          AI_API_KEY: test-placeholder
+          AI_API_BASE_URL: https://api.moonshot.cn/v1
+          AI_MODEL: moonshot-v1-8k
+          TOKEN_DAILY_BUDGET: '3000000'
+          TOKEN_DEGRADE_THRESHOLD: '2500000'
+          TOKEN_PAUSE_THRESHOLD: '3000000'
+          WECHAT_WEBHOOK_URL: ''
+          DB_URL: ''
         run: |
-          WORKSPACE=$(pwd)
-          sed -i "s|<source>[^<]*</source>|<source>${WORKSPACE}/src/ai-gateway/app</source>|g" \
-            ${{ env.AI_GATEWAY_DIR }}/coverage.xml
-          echo "修正后的 source 路径："
-          grep "<source>" ${{ env.AI_GATEWAY_DIR }}/coverage.xml
+          pip install -r requirements.txt -q
+          python3 -m pytest tests/ \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=70 \
+            -q
 
       - name: 运行 SonarQube 扫描并检查质量门禁
         env:
@@ -172,8 +171,12 @@ jobs:
           SCANNER_EXIT=$?
           set -e
           echo "sonar-scanner exit code: ${SCANNER_EXIT}"
-          if [ "${SCANNER_EXIT}" -eq 1 ]; then
-            echo "❌ sonar-scanner 致命错误（exit 1），分析未提交"; exit 1
+          # exit 0: 成功; exit 2/3: 分析已提交但 QG 不通过（我们自行判断）
+          # exit 1 或其他非预期值: 致命错误，分析未提交
+          if [ "${SCANNER_EXIT}" -ne 0 ] && \
+             [ "${SCANNER_EXIT}" -ne 2 ] && \
+             [ "${SCANNER_EXIT}" -ne 3 ]; then
+            echo "❌ sonar-scanner 致命错误（exit ${SCANNER_EXIT}），分析未提交"; exit 1
           fi
 
           # ── 3. 读取 CE 任务 URL ───────────────────────────────────
