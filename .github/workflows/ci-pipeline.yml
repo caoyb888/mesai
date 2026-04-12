@@ -147,22 +147,28 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
-          # ── 1. 定位 sonar-scanner（优先工具缓存，回退系统 PATH）──
+          echo "=== 环境诊断 ==="
+          echo "工作目录: $(pwd)"
+          echo "SONAR_HOST_URL: ${SONAR_HOST_URL}"
+          echo "SonarQube 连通性测试:"
+          curl -sf "${SONAR_HOST_URL}/api/system/status" || echo "⚠️ 无法连接 SonarQube"
+          echo ""
+
+          # ── 1. 定位 sonar-scanner ────────────────────────────────
           SCANNER=$(find /home/ubuntu/actions-runner/_work/_tool/sonar-scanner-cli \
                          -name sonar-scanner -type f 2>/dev/null | sort -V | tail -1)
           if [ -z "$SCANNER" ]; then
             SCANNER=$(command -v sonar-scanner 2>/dev/null)
           fi
           if [ -z "$SCANNER" ]; then
-            echo "❌ 未找到 sonar-scanner，请检查 Runner 环境"; exit 1
+            echo "❌ 未找到 sonar-scanner"; exit 1
           fi
-          echo "✅ 使用 sonar-scanner: $SCANNER"
+          echo "sonar-scanner: $SCANNER"
 
-          # ── 2. 执行扫描 ───────────────────────────────────────────
-          # sonar-scanner 8.x 在某些条件下忽略 qualitygate.wait=false 仍以
-          # exit code 2（WARN）或 3（ERROR）退出。这两个值表示分析已成功提交
-          # 但质量门禁状态由 scanner 内部判断，我们在步骤 5 通过 API 自行判断，
-          # 所以这里只对 exit code 1（致命错误/连接失败）报错退出。
+          # ── 2. 清理旧的 .scannerwork 避免锁冲突 ─────────────────
+          rm -rf .scannerwork
+
+          # ── 3. 执行扫描（完整输出）──────────────────────────────
           set +e
           "$SCANNER" \
             -Dsonar.token="${SONAR_TOKEN}" \
@@ -170,19 +176,25 @@ jobs:
             -Dsonar.qualitygate.wait=false
           SCANNER_EXIT=$?
           set -e
-          echo "sonar-scanner exit code: ${SCANNER_EXIT}"
-          # exit 0: 成功; exit 2/3: 分析已提交但 QG 不通过（我们自行判断）
-          # exit 1 或其他非预期值: 致命错误，分析未提交
+
+          echo "=== sonar-scanner exit code: ${SCANNER_EXIT} ==="
+          echo "=== .scannerwork 内容: ==="
+          ls -la .scannerwork/ 2>/dev/null || echo "(目录不存在)"
+
+          # exit 0/2/3 均表示分析报告已提交，继续检查 QG
+          # 其他值（1/127/139 等）表示致命错误
           if [ "${SCANNER_EXIT}" -ne 0 ] && \
              [ "${SCANNER_EXIT}" -ne 2 ] && \
              [ "${SCANNER_EXIT}" -ne 3 ]; then
-            echo "❌ sonar-scanner 致命错误（exit ${SCANNER_EXIT}），分析未提交"; exit 1
+            echo "❌ sonar-scanner 致命错误（exit ${SCANNER_EXIT}）"; exit 1
           fi
 
-          # ── 3. 读取 CE 任务 URL ───────────────────────────────────
+          # ── 4. 读取 CE 任务 URL ───────────────────────────────────
           REPORT_FILE=".scannerwork/report-task.txt"
           if [ ! -f "$REPORT_FILE" ]; then
-            echo "❌ 未找到 $REPORT_FILE，扫描可能未正常完成"; exit 1
+            echo "❌ 未找到 $REPORT_FILE（scanner exit=${SCANNER_EXIT}）"
+            echo "请检查上方 sonar-scanner 完整输出确认失败原因"
+            exit 1
           fi
           TASK_URL=$(grep "^ceTaskUrl=" "$REPORT_FILE" | cut -d= -f2-)
           echo "CE Task: $TASK_URL"
