@@ -147,11 +147,22 @@ jobs:
           fi
           echo "✅ 使用 sonar-scanner: $SCANNER"
 
-          # ── 2. 执行扫描（强制禁用内置 QG 等待，避免 exit code 3）──
+          # ── 2. 执行扫描 ───────────────────────────────────────────
+          # sonar-scanner 8.x 在某些条件下忽略 qualitygate.wait=false 仍以
+          # exit code 2（WARN）或 3（ERROR）退出。这两个值表示分析已成功提交
+          # 但质量门禁状态由 scanner 内部判断，我们在步骤 5 通过 API 自行判断，
+          # 所以这里只对 exit code 1（致命错误/连接失败）报错退出。
+          set +e
           "$SCANNER" \
             -Dsonar.token="${SONAR_TOKEN}" \
             -Dsonar.host.url="${SONAR_HOST_URL}" \
             -Dsonar.qualitygate.wait=false
+          SCANNER_EXIT=$?
+          set -e
+          echo "sonar-scanner exit code: ${SCANNER_EXIT}"
+          if [ "${SCANNER_EXIT}" -eq 1 ]; then
+            echo "❌ sonar-scanner 致命错误（exit 1），分析未提交"; exit 1
+          fi
 
           # ── 3. 读取 CE 任务 URL ───────────────────────────────────
           REPORT_FILE=".scannerwork/report-task.txt"
