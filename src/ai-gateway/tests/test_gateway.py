@@ -208,3 +208,50 @@ async def should_return_budget_status(client):
     assert "used_tokens" in data
     assert "daily_budget" in data
     assert data["daily_budget"] == 3_000_000
+
+
+# ── 告警触发路径覆盖 ─────────────────────────────────────────
+
+def should_trigger_degrade_alert_once_when_threshold_crossed():
+    """should_触发降级告警_when_首次超过250万阈值"""
+    svc = TokenBudgetService()
+    with patch.object(svc, "_send_alert") as mock_alert:
+        svc.add_usage(2_500_001, "REQ-MES-AI-20260412-002", "test")
+        assert mock_alert.called
+        call_args = mock_alert.call_args
+        assert call_args[1]["level"] == "警告" or call_args[0][0] == "警告"
+        # 第二次调用不再重复触发告警
+        mock_alert.reset_mock()
+        svc.add_usage(1, "REQ-MES-AI-20260412-003", "test")
+        mock_alert.assert_not_called()
+
+
+def should_trigger_pause_alert_once_when_budget_exceeded():
+    """should_触发暂停告警_when_首次超过300万预算"""
+    svc = TokenBudgetService()
+    with patch.object(svc, "_send_alert") as mock_alert:
+        svc.add_usage(3_000_001, "REQ-MES-AI-20260412-004", "test")
+        # 验证告警被调用（降级+暂停各一次，或合并调用）
+        assert mock_alert.call_count >= 1
+        call_levels = [c[0][0] if c[0] else c[1].get("level") for c in mock_alert.call_args_list]
+        assert "紧急" in call_levels
+
+
+@pytest.mark.asyncio
+async def should_return_500_json_when_global_exception_handler_called():
+    """should_返回500JSON_when_全局异常处理器被触发
+    直接调用 global_exception_handler 函数验证响应格式，绕开 ASGI 中间件重抛行为
+    """
+    from unittest.mock import MagicMock
+    from app.main import global_exception_handler
+
+    mock_request = MagicMock()
+    mock_request.method = "POST"
+    mock_request.url = "http://test/v1/ai/chat"
+
+    resp = await global_exception_handler(mock_request, RuntimeError("模拟内部崩溃"))
+    assert resp.status_code == 500
+    import json
+    body = json.loads(resp.body)
+    assert body["code"] == 99999
+    assert "网关内部错误" in body["message"]

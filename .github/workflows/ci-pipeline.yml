@@ -1,0 +1,193 @@
+# ============================================================
+# 芯智云匠 MES AI 平台 · CI 主流水线
+# 文档编号: AI-MES-CICD-2026-001
+# 关联任务: T1-4-1 / T1-4-3
+# 作者: AI
+# 日期: 2026-04-12
+#
+# 流水线阶段（遵循 CLAUDE.md §8.1 回归测试顺序）：
+#   Stage 1 → hardcode-scan   : Gitleaks 硬编码扫描（零容忍）
+#   Stage 2 → test-ai-gateway : pytest 单元测试（覆盖率 ≥ 70%）
+#   Stage 3 → sonar-scan      : SonarQube 质量扫描（0 Critical）
+#   Stage 4 → build           : Docker 镜像构建
+#   Stage 5 → deploy-test     : 自动部署至测试环境（仅 develop 分支）
+# ============================================================
+
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - develop
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+# 同一分支同一时刻只运行一个流水线，新推送自动取消旧的
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  AI_GATEWAY_DIR: src/ai-gateway
+
+# ── Stage 1: 硬编码扫描（第一道门禁，失败则立即阻断）────────
+jobs:
+  hardcode-scan:
+    name: 🔍 硬编码扫描 (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 全量历史，gitleaks 需要
+
+      - name: 运行 Gitleaks 扫描
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        with:
+          config-path: .gitleaks.toml
+
+# ── Stage 2: AI 网关单元测试 ──────────────────────────────────
+  test-ai-gateway:
+    name: 🧪 AI 网关测试 (pytest ≥70%)
+    runs-on: ubuntu-latest
+    needs: hardcode-scan
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: ${{ env.AI_GATEWAY_DIR }}/requirements.txt
+
+      - name: 安装依赖
+        working-directory: ${{ env.AI_GATEWAY_DIR }}
+        run: pip install -r requirements.txt pytest-cov
+
+      - name: 运行测试（含覆盖率）
+        working-directory: ${{ env.AI_GATEWAY_DIR }}
+        env:
+          # 测试环境使用空 Key，测试用例均使用 Mock，不需要真实 API
+          AI_PROVIDER: kimi
+          AI_API_KEY: test-placeholder
+          AI_API_BASE_URL: https://api.moonshot.cn/v1
+          AI_MODEL: moonshot-v1-8k
+          TOKEN_DAILY_BUDGET: '3000000'
+          TOKEN_DEGRADE_THRESHOLD: '2500000'
+          TOKEN_PAUSE_THRESHOLD: '3000000'
+          WECHAT_WEBHOOK_URL: ''
+          DB_URL: ''
+        run: |
+          pytest tests/ \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            -v
+
+      - name: 上传覆盖率报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: ${{ env.AI_GATEWAY_DIR }}/coverage.xml
+
+# ── Stage 3: SonarQube 代码质量扫描 ──────────────────────────
+  sonar-scan:
+    name: 📊 SonarQube 质量扫描 (0 Critical)
+    runs-on: self-hosted          # 需要访问内网 SonarQube
+    needs: test-ai-gateway
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 下载覆盖率报告
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: ${{ env.AI_GATEWAY_DIR }}
+
+      - name: 运行 SonarQube 扫描
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: 检查质量门禁结果
+        uses: SonarSource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+# ── Stage 4: Docker 镜像构建 ──────────────────────────────────
+  build:
+    name: 🐳 构建 Docker 镜像
+    runs-on: self-hosted
+    needs: sonar-scan
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 构建 AI 网关镜像
+        run: |
+          docker build \
+            -t mesai/ai-gateway:${{ github.sha }} \
+            -t mesai/ai-gateway:latest \
+            ${{ env.AI_GATEWAY_DIR }}
+
+      - name: 验证镜像健康检查
+        run: |
+          # 启动临时容器验证健康检查通过
+          docker run -d \
+            --name ci-test-gateway-${{ github.run_id }} \
+            -e AI_PROVIDER=kimi \
+            -e AI_API_KEY=test-placeholder \
+            -e AI_MODEL=moonshot-v1-8k \
+            -p 18000:8000 \
+            mesai/ai-gateway:${{ github.sha }}
+          sleep 5
+          docker exec ci-test-gateway-${{ github.run_id }} \
+            python -c "import httpx; r=httpx.get('http://localhost:8000/v1/ai/health'); assert r.status_code==200, f'Health check failed: {r.status_code}'"
+          docker rm -f ci-test-gateway-${{ github.run_id }}
+
+# ── Stage 5: 自动部署至测试环境（仅 develop 分支）────────────
+  deploy-test:
+    name: 🚀 部署至测试环境
+    runs-on: self-hosted
+    needs: build
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+
+    environment:
+      name: test
+      url: http://localhost:8000/v1/ai/health
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 执行部署脚本
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
+          DB_URL: ${{ secrets.DB_URL }}
+          DEPLOY_IMAGE_TAG: ${{ github.sha }}
+        run: bash scripts/deploy/deploy-ai-gateway.sh
+
+      - name: 部署后健康检查
+        run: |
+          sleep 5
+          curl -f http://localhost:8000/v1/ai/health | python3 -m json.tool

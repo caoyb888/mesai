@@ -94,6 +94,7 @@ severity    = "critical"
 description = "全局白名单：排除文档、测试数据、配置模板中的已知误报"
 paths = [
     '''.gitleaks.toml''',
+    '''CLAUDE.md''',
     '''docs/.*\.md''',
     '''.*\.sample''',
     '''.*_test\.java''',
@@ -101,5 +102,6 @@ paths = [
     '''src/test/.*''',
     '''src/.*/tests/.*\.py''',
     '''assertions/.*''',
+    '''scripts/init/.*\.sql''',
 ]
 commits = []

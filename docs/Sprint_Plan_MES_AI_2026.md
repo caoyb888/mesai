@@ -7,7 +7,7 @@
 | 文件编号 | AI-MES-PLAN-2026-001 |
 | 版本号 | V1.1 |
 | 编写日期 | 2026-04-12 |
-| 最近更新 | 2026-04-12（Sprint 0 全部完成） |
+| 最近更新 | 2026-04-12（S1-4 CI/CD 流水线配置完成） |
 | 编写人 | 项目经理 |
 | 关联方案 | AI-MES-TECH-2026-001（V1.1） |
 | 关联数据库 | AI-MES-DB-2026-001（V1.1） |
@@ -25,7 +25,7 @@
 | Sprint | 时间范围 | 状态 | 完成率 |
 |--------|--------|------|--------|
 | Sprint 0 · 项目启动 | 2026-04-14 ~ 2026-04-17 | ✅ 已完成 | 100% |
-| Sprint 1 · 环境与基础设施 | 2026-04-14 ~ 2026-04-24 | 🟡 进行中 | 17%（S1-1完成）|
+| Sprint 1 · 环境与基础设施 | 2026-04-14 ~ 2026-04-24 | 🟡 进行中 | 88%（S1-1/S1-2/S1-3/S1-4完成，S1-5未开始）|
 | Sprint 2 ~ 12 | 2026-04-25 ~ 2026-09-25 | ⬜ 未开始 | 0% |
 
 ### Story 完成状态
@@ -35,9 +35,9 @@
 | S0-1 | Kick-off会议与计划确认 | TL/IT/ITM/BIZ | ✅ 已完成 | 2026-04-12 | 含Kick-off会议纪要、权限清单、保密协议 |
 | S0-2 | 开发规范宣贯 | TL/AE | ✅ 已完成 | 2026-04-12 | 全部任务已完成，团队已签字确认 |
 | S1-1 | 测试服务器与网络环境 | NET/DBA/IT | ✅ 已完成 | 2026-04-12 | MES DB 为 PostgreSQL 15.x（非 MySQL），AI 平台 DB 单独建设 MySQL 8.x；验证报告见 docs/测试环境验证报告.md |
-| S1-2 | AI网关服务部署 | TL/AE | ⬜ 未开始 | — | — |
-| S1-3 | 数据库初始化 | AE/DBA | ⬜ 未开始 | — | — |
-| S1-4 | CI/CD流水线基础配置 | AE/TL | ⬜ 未开始 | — | — |
+| S1-2 | AI网关服务部署 | TL/AE | ✅ 已完成 | 2026-04-12 | Kimi替代Claude（开发阶段），Provider抽象设计，切换仅改3个环境变量；T1-2-5暂缓（GPU待就绪） |
+| S1-3 | 数据库初始化 | AE/DBA | ✅ 已完成 | 2026-04-12 | MySQL 8.0.45 本机部署；4个Schema 22张表（含7张分区表）；断言种子数据6条；mesai_admin/mesai_app账号权限就绪；DB_URL已写入.env |
+| S1-4 | CI/CD流水线基础配置 | AE/TL | ✅ 已完成 | 2026-04-12 | GitHub Actions 5-Stage流水线；SonarQube 26.4（9100端口）本地部署；MES-AI-Gate质量门禁；蓝绿部署脚本；本地验证5/5通过 |
 | S1-5 | 后端项目骨架 | AE/TL | ⬜ 未开始 | — | — |
 
 ### 任务完成明细
@@ -54,6 +54,25 @@
 | T0-2-2 | 建立GitLab仓库，配置分支策略 | ✅ 已完成 | 2026-04-12 | GitHub仓库+main/develop分支+分支保护规则+`docs/Git_Branch_Strategy.md` |
 | T0-2-3 | 配置Git Hooks，集成Gitleaks预提交扫描 | ✅ 已完成 | 2026-04-12 | `.gitleaks.toml`（7条专项规则）+`pre-commit` hook，含IP拦截验证 |
 | T0-2-4 | 建立需求单编号序列规则，初始化Redis序列计数器 | ✅ 已完成 | 2026-04-12 | `TaskNoGenerator.java`+`SeqCounterMapper`+Redis/MySQL初始化脚本+10个单元测试 |
+| T1-2-1 | 部署AI统一调用网关 | ✅ 已完成 | 2026-04-12 | FastAPI网关+Provider抽象+Dockerfile，接口：/v1/ai/chat、/budget/status、/health |
+| T1-2-2 | 配置Kimi API接入（替代Claude） | ✅ 已完成 | 2026-04-12 | `OpenAICompatibleProvider`，`.env.example`，API Key环境变量注入 |
+| T1-2-3 | 实现AI调用日志记录 | ✅ 已完成 | 2026-04-12 | INFO级别记录tokens/耗时/来源/call_seq |
+| T1-2-4 | 配置每日Token预算告警 | ✅ 已完成 | 2026-04-12 | 250万降级+300万暂停+企业微信通知 |
+| T1-2-5 | 部署本地DeepSeek-V3模型 | ⏸️ 暂缓 | — | 等待GPU服务器就绪，不阻断后续任务 |
+| T1-2-6 | AI网关接口测试用例 | ✅ 已完成 | 2026-04-12 | 12个单元测试通过+Kimi真实API连通验证（响应正常，耗时2178ms） |
+| T1-3-1 | mes_ai_task Schema DDL（10张表） | ✅ 已完成 | 2026-04-12 | `V1__mes_ai_task_schema.sql`，含2张分区表 |
+| T1-3-2 | mes_ai_monitor Schema DDL（3张表） | ✅ 已完成 | 2026-04-12 | `V2__mes_ai_monitor_schema.sql`，含2张分区表 |
+| T1-3-3 | mes_ai_knowledge Schema DDL（6张表） | ✅ 已完成 | 2026-04-12 | `V3__mes_ai_knowledge_schema.sql`，含1张分区表 |
+| T1-3-4 | mes_ai_audit Schema DDL（3张表） | ✅ 已完成 | 2026-04-12 | `V4__mes_ai_audit_schema.sql`，含2张分区表 |
+| T1-3-5 | 索引策略配置 | ✅ 已完成 | 2026-04-12 | 已内嵌在各DDL脚本，V1.1新增9个索引 |
+| T1-3-6 | 分区策略配置 | ✅ 已完成 | 2026-04-12 | 7张高频表按YEAR(created_at)分区，含pmax兜底 |
+| T1-3-7 | 初始化基础数据 | ✅ 已完成 | 2026-04-12 | `V5__init_base_data.sql`：断言种子6条、知识库文档5条、Token统计初始记录 |
+| T1-3-8 | DBA审核确认 | ⬜ 待DBA | — | 请DBA登录 mesai_admin 账号确认表结构与分区 |
+| T1-4-1 | GitHub Actions基础Pipeline（5 Stage） | ✅ 已完成 | 2026-04-12 | `.github/workflows/ci-pipeline.yml`，含并发控制 |
+| T1-4-2 | SonarQube质量扫描集成 | ✅ 已完成 | 2026-04-12 | SonarQube 26.4 Docker部署（端口9100）；MES-AI-Gate门禁（Blocker=0,Critical=0） |
+| T1-4-3 | Gitleaks硬编码扫描集成Pipeline | ✅ 已完成 | 2026-04-12 | Stage 1 第一道门禁；CLAUDE.md白名单修复（去掉误报5条） |
+| T1-4-4 | 自动部署至测试环境脚本 | ✅ 已完成 | 2026-04-12 | `deploy-ai-gateway.sh` 蓝绿部署+自动回退+健康检查 |
+| T1-4-5 | Pipeline测试用例验证 | ✅ 已完成 | 2026-04-12 | `validate-pipeline.sh` 5/5通过；pytest 15/15通过，覆盖率71.53% |
 
 ### 里程碑状态
 
