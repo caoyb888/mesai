@@ -131,6 +131,18 @@ jobs:
           name: coverage-report
           path: ${{ env.AI_GATEWAY_DIR }}
 
+      - name: 修正覆盖率报告中的文件路径
+        # coverage.xml 由 ubuntu-latest runner 生成，其 <source> 元素含有
+        # 云端 runner 的绝对路径（/home/runner/work/...），在 self-hosted runner
+        # 上路径不同，sonar 无法解析文件 → 覆盖率归零 → 质量门禁失败
+        # 替换为当前 workspace 的实际路径即可正确匹配
+        run: |
+          WORKSPACE=$(pwd)
+          sed -i "s|<source>[^<]*</source>|<source>${WORKSPACE}/src/ai-gateway/app</source>|g" \
+            ${{ env.AI_GATEWAY_DIR }}/coverage.xml
+          echo "修正后的 source 路径："
+          grep "<source>" ${{ env.AI_GATEWAY_DIR }}/coverage.xml
+
       - name: 运行 SonarQube 扫描并检查质量门禁
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
