@@ -1,0 +1,3 @@
+# 此目录用于存放甲方提供的基础数据模块原始 PostgreSQL DDL 文件（.sql）
+# 文件名建议：MES_基础数据_DDL_v{版本号}.sql
+# 注意：DDL 文件可能含敏感表名，提交前确认已通过 Gitleaks 扫描

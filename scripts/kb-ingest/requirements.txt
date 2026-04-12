@@ -1,0 +1,29 @@
+# 知识库入库工具依赖
+# 关联任务：S2-1 T2-1-1
+# 日期：2026-04-12
+# 注意：本 requirements.txt 供 scripts/kb-ingest/ 独立使用，
+#       不影响 src/ai-gateway/requirements.txt（AI 网关生产依赖）
+#       新增依赖须经技术负责人审批（CLAUDE.md 第二章）
+
+# ── 向量数据库 ─────────────────────────────────────────────────
+chromadb==0.4.24
+
+# ── LangChain 文本处理 ─────────────────────────────────────────
+langchain==0.1.20
+langchain-community==0.0.38
+
+# ── OpenAI 兼容客户端（Kimi Embedding API）────────────────────
+openai==1.59.4
+
+# ── MySQL 操作（写入 ai_kb_document / ai_kb_chunk）───────────
+pymysql==1.1.1
+cryptography==42.0.8        # pymysql 加密连接依赖
+
+# ── Excel/Word 解析（数据字典格式化）──────────────────────────
+openpyxl==3.1.2
+python-docx==1.1.2
+
+# ── 工具 ───────────────────────────────────────────────────────
+python-dotenv==1.0.1
+tqdm==4.66.4                # 进度条
+tiktoken==0.7.0             # Token 计数（估算 chunk 大小）
