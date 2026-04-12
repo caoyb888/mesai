@@ -1,0 +1,159 @@
+# ============================================================
+# 芯智云匠 MES AI 项目 .gitignore
+# 项目: AI-MES-TECH-2026-001
+# 作者: AI
+# 日期: 2026-04-12
+# ============================================================
+
+# ============================================================
+# 安全红线：以下文件类型绝对禁止提交（Gitleaks 也会拦截）
+# ============================================================
+*.env
+*.env.*
+.env.local
+.env.*.local
+application-prod.yml
+application-prod.yaml
+application-prod.properties
+**/secret/**
+**/secrets/**
+vault-token
+*.pem
+*.p12
+*.jks
+*.key
+*.pfx
+
+# ============================================================
+# Java / Maven / Spring Boot
+# ============================================================
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+*.launch
+*.factorypath
+
+# ============================================================
+# Node.js / Vue 3 / Vite
+# ============================================================
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+.cache/
+
+# 构建产物
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/
+
+# ============================================================
+# Python（AI 引擎层 / LangChain）
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter
+.ipynb_checkpoints
+
+# ============================================================
+# 测试与覆盖率报告
+# ============================================================
+coverage/
+*.lcov
+.nyc_output/
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ============================================================
+# 日志与临时文件
+# ============================================================
+logs/
+*.log
+*.log.*
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# ============================================================
+# 操作系统
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Docker / DevOps
+# ============================================================
+.docker/
+docker-compose.override.yml
+
+# ============================================================
+# 向量数据库本地数据（ChromaDB / Milvus）
+# ============================================================
+chroma_db/
+milvus_data/
+vector_store/
+
+# ============================================================
+# 其他
+# ============================================================
+.turbo/
+.vercel/
+*.orig
