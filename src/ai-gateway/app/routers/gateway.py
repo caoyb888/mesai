@@ -6,6 +6,7 @@ AI 网关路由层
 """
 
 import logging
+from typing import Annotated
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.config import get_settings, Settings
@@ -39,8 +40,8 @@ def _get_provider():
 @router.post("/chat", response_model=GatewayResponse, summary="AI 对话接口（统一入口）")
 async def chat(
     request: GatewayRequest,
-    token_service: TokenBudgetService = Depends(get_token_service),
-    settings: Settings = Depends(get_settings),
+    token_service: Annotated[TokenBudgetService, Depends(get_token_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ):
     """
     AI 统一对话接口
@@ -115,7 +116,7 @@ async def chat(
 
 @router.get("/budget/status", response_model=BudgetStatus, summary="查询当日 Token 预算状态")
 async def get_budget_status(
-    token_service: TokenBudgetService = Depends(get_token_service),
+    token_service: Annotated[TokenBudgetService, Depends(get_token_service)],
 ):
     """查询当日 Token 消耗与预算状态（巡检和监控使用）"""
     return token_service.check_budget()

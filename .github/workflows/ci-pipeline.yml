@@ -125,12 +125,18 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          # 禁用 scanner 内置 QG 等待（exit code 3 问题根源）
+          # 质量门禁结果由下方 quality-gate-action 独立轮询判断
+          args: >
+            -Dsonar.qualitygate.wait=false
 
       - name: 检查质量门禁结果
         uses: SonarSource/sonarqube-quality-gate-action@master
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
 # ── Stage 4: Docker 镜像构建 ──────────────────────────────────
   build:
