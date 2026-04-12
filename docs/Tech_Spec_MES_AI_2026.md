@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |------|------|
 | 文件编号 | AI-MES-TECHSPEC-2026-001 |
-| 版本号 | V1.0 |
+| 版本号 | V1.1 |
 | 编写日期 | 2026-04-12 |
 | 编写单位 | 乙方技术团队 |
 | 关联技术方案 | AI-MES-TECH-2026-001（V1.1） |
@@ -51,7 +51,8 @@
 | Spring Boot | 2.7.x | 应用框架 | 使用最新 2.7.x 补丁版本 |
 | MyBatis Plus | 3.5.x | ORM 框架 | 与项目现有版本一致 |
 | Spring Security | 5.7.x | 安全框架（JWT辅助） | 随 Spring Boot 2.7.x 版本 |
-| MySQL Connector/J | 8.0.x | 数据库驱动 | 与 MySQL 8.x 配套 |
+| MySQL Connector/J | 8.0.x | AI 平台数据库驱动 | 与 AI 平台自建 MySQL 8.x 配套 |
+| PostgreSQL JDBC Driver | 42.x | MES 系统数据库只读驱动 | 连接现有 MES PostgreSQL 15.x，只读账号，禁止写操作 |
 | Redis（Lettuce） | Spring Boot 内置版本 | 分布式序列号、Token黑名单 | 通过 spring-boot-starter-data-redis 引入 |
 | JJWT | 0.11.x | JWT 生成与校验 | `io.jsonwebtoken:jjwt-api/impl/jackson` |
 | Lombok | 最新稳定 | 消除样板代码 | `@Slf4j`、`@Data`、`@Builder` 等 |
@@ -80,7 +81,8 @@
 
 | 组件 | 版本/规格 | 用途 |
 |------|---------|------|
-| MySQL | 8.0.x | 主业务数据库（22 张表） |
+| MySQL 8.0.x | AI 平台自建数据库（4 个 Schema，22 张表），部署于 AI 平台服务器（服务器 B） |
+| PostgreSQL 15.x | MES 系统现有数据库，部署于 MES 服务器（服务器 A），AI 平台通过只读账号跨服访问，**禁止写入** |
 | Redis | 6.x+ | 序列号生成、Token 黑名单 |
 | GitLab | 内网私有 | 代码仓库 |
 | GitLab CI / Jenkins | — | CI/CD 流水线 |
@@ -1482,12 +1484,17 @@ public class JwtUtil {
 ```yaml
 # application-prod.yml（生产环境配置）
 # 所有敏感项通过 ${ENV_VAR} 从环境变量注入，禁止写死值
+# 双数据源说明：
+#   datasource（主）→ AI 平台自建 MySQL 8.x（可读写）
+#   mes-datasource（从）→ MES 系统 PostgreSQL 15.x（只读，禁止写操作）
 
 spring:
+  # ── AI 平台主数据源（MySQL 8.x，可读写）─────────────────────
   datasource:
     url: ${DB_URL}                    # ❌ 禁止：jdbc:mysql://192.168.x.x:3306/...
     username: ${DB_USERNAME}          # ❌ 禁止：mesai_user
     password: ${DB_PASSWORD}          # ❌ 禁止：mypassword123
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   redis:
     host: ${REDIS_HOST}
@@ -1506,6 +1513,61 @@ ai:
 logging:
   file:
     path: ${LOG_PATH:/var/log/mesai}
+
+# ── MES 系统只读数据源（PostgreSQL 15.x，禁止写操作）──────────
+# 注意：本数据源仅供 AI 平台读取 MES 业务数据用于 RAG 知识库建设
+#       所有通过此数据源发出的 SQL 必须为 SELECT，严禁 INSERT/UPDATE/DELETE/DDL
+#       账号：itsm_readonly（无 CREATE 权限，已通过 T1-1-5 验收验证）
+mes:
+  datasource:
+    url: ${MES_DB_URL}                # jdbc:postgresql://<host>:5432/itsm_dev
+    username: ${MES_DB_USER}          # itsm_readonly
+    password: ${MES_DB_PASS}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5            # MES DB 为只读连接，连接池控制在较小值
+      minimum-idle: 2
+      connection-timeout: 10000
+      idle-timeout: 300000
+      read-only: true                 # HikariCP 级别只读保护，防止误写
+```
+
+**MES 只读数据源对应的 Spring Bean 配置要点**（在 `config/MesDataSourceConfig.java` 中实现）：
+
+```java
+/**
+ * MES 系统只读数据源配置
+ * 独立于 AI 平台主数据源，使用 @Qualifier("mesDataSource") 区分
+ * 对应环境变量：MES_DB_URL / MES_DB_USER / MES_DB_PASS
+ *
+ * 安全约束：
+ *   - HikariCP readOnly=true，防止误操作写入 MES 库
+ *   - 对应 Mapper 使用 @DS("mes") 注解（dynamic-datasource-spring-boot-starter）
+ *   - 禁止在 MES 数据源上执行任何 INSERT/UPDATE/DELETE/DDL
+ *
+ * @author AI
+ * @date 2026-04-12
+ * 关联需求单: T1-1-5（测试环境验证通过）
+ */
+@Configuration
+public class MesDataSourceConfig {
+
+    @Bean("mesDataSource")
+    @ConfigurationProperties(prefix = "mes.datasource")
+    public DataSource mesDataSource() {
+        return DataSourceBuilder.create()
+                .type(HikariDataSource.class)
+                .build();
+    }
+
+    @Bean("mesJdbcTemplate")
+    public JdbcTemplate mesJdbcTemplate(@Qualifier("mesDataSource") DataSource ds) {
+        JdbcTemplate template = new JdbcTemplate(ds);
+        // 强制只读：超时设置 5s，防止慢查询影响 AI 平台主业务
+        template.setQueryTimeout(5);
+        return template;
+    }
+}
 ```
 
 ### 10.6 PII 脱敏层接口规范
@@ -2247,6 +2309,7 @@ mesaiAiGatewayTimeoutSeconds: 120
 | ADR-008 | Excel 导出 | EasyExcel（阿里开源）替代 Apache POI 直接操作 | POI 直接操作 API 繁琐、内存占用高；EasyExcel 流式处理，避免 OOM | 2026-04 |
 | ADR-009 | 前端状态管理 | Pinia（Vue 3 官方推荐），不使用 Vuex | Pinia 更轻量、TypeScript 友好、无 mutations 概念，与 Vue 3 配套 | 2026-04 |
 | ADR-010 | 向量数据库 | ChromaDB（轻量，测试期）→ Milvus（生产） | 项目初期快速迭代用 ChromaDB；数据量增长后平滑迁移至 Milvus | 2026-04 |
+| ADR-011 | 双数据源架构 | AI 平台自建 MySQL 8.x（读写）+ MES 现有 PostgreSQL 15.x（只读） | MES 系统已使用 PostgreSQL（`itsm_dev`），不做迁移；AI 平台业务数据独立建 MySQL，两者隔离，AI 平台通过只读账号 `itsm_readonly` 跨服访问 MES 库，HikariCP `readOnly=true` 作兜底保护；经 T1-1-5 验证通过（2026-04-12） | 2026-04 |
 
 ### 附录 B：关键阈值速查表（补充 CLAUDE.md 附录）
 
@@ -2282,9 +2345,10 @@ mesaiAiGatewayTimeoutSeconds: 120
 | 版本 | 日期 | 修改人 | 修改内容 |
 |------|------|------|--------|
 | V1.0 | 2026-04-12 | 项目经理 | 初稿编写，补充技术方案未细化的技术决策 |
+| V1.1 | 2026-04-12 | AI | Sprint 1 T1-1-5 验证后更新：确认 MES 系统数据库为 PostgreSQL 15.x；新增双数据源架构规范（ADR-011）；补充 MES 只读数据源配置（10.5节）及 MesDataSourceConfig Bean 规范；新增 PostgreSQL JDBC 驱动依赖（1.1节）；基础设施说明更新（1.3节） |
 
 ---
 
 *芯智云匠——山东芯通 MES 岗位 AI 智能体资产化项目*
-*技术规范文档 · AI-MES-TECHSPEC-2026-001 · V1.0 · 2026年4月12日*
+*技术规范文档 · AI-MES-TECHSPEC-2026-001 · V1.1 · 2026年4月12日*
 *本文件受版本控制，修改须经技术负责人批准，变更记录见 Git 历史*
