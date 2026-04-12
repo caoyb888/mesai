@@ -120,23 +120,63 @@ jobs:
           name: coverage-report
           path: ${{ env.AI_GATEWAY_DIR }}
 
-      - name: 运行 SonarQube 扫描
-        uses: SonarSource/sonarqube-scan-action@master
+      - name: 运行 SonarQube 扫描并检查质量门禁
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        with:
-          # 禁用 scanner 内置 QG 等待（exit code 3 问题根源）
-          # 质量门禁结果由下方 quality-gate-action 独立轮询判断
-          args: >
+        run: |
+          # ── 1. 定位 sonar-scanner（优先工具缓存，回退系统 PATH）──
+          SCANNER=$(find /home/ubuntu/actions-runner/_work/_tool/sonar-scanner-cli \
+                         -name sonar-scanner -type f 2>/dev/null | sort -V | tail -1)
+          if [ -z "$SCANNER" ]; then
+            SCANNER=$(command -v sonar-scanner 2>/dev/null)
+          fi
+          if [ -z "$SCANNER" ]; then
+            echo "❌ 未找到 sonar-scanner，请检查 Runner 环境"; exit 1
+          fi
+          echo "✅ 使用 sonar-scanner: $SCANNER"
+
+          # ── 2. 执行扫描（强制禁用内置 QG 等待，避免 exit code 3）──
+          "$SCANNER" \
+            -Dsonar.token="${SONAR_TOKEN}" \
+            -Dsonar.host.url="${SONAR_HOST_URL}" \
             -Dsonar.qualitygate.wait=false
 
-      - name: 检查质量门禁结果
-        uses: SonarSource/sonarqube-quality-gate-action@master
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          # ── 3. 读取 CE 任务 URL ───────────────────────────────────
+          REPORT_FILE=".scannerwork/report-task.txt"
+          if [ ! -f "$REPORT_FILE" ]; then
+            echo "❌ 未找到 $REPORT_FILE，扫描可能未正常完成"; exit 1
+          fi
+          TASK_URL=$(grep "^ceTaskUrl=" "$REPORT_FILE" | cut -d= -f2-)
+          echo "CE Task: $TASK_URL"
+
+          # ── 4. 等待 CE 任务处理完成（最多 3 分钟）────────────────
+          for i in $(seq 1 36); do
+            CE_STATUS=$(curl -sf -u "${SONAR_TOKEN}:" "${TASK_URL}" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin)['task']['status'])")
+            echo "  CE Task status[$i]: ${CE_STATUS}"
+            if [ "$CE_STATUS" = "SUCCESS" ] || [ "$CE_STATUS" = "FAILED" ] || \
+               [ "$CE_STATUS" = "CANCELLED" ]; then
+              break
+            fi
+            sleep 5
+          done
+          if [ "$CE_STATUS" != "SUCCESS" ]; then
+            echo "❌ CE 任务未成功完成，状态：${CE_STATUS}"; exit 1
+          fi
+
+          # ── 5. 检查质量门禁结果 ───────────────────────────────────
+          QG_RESPONSE=$(curl -sf -u "${SONAR_TOKEN}:" \
+            "${SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=mes-ai-platform")
+          QG_STATUS=$(echo "$QG_RESPONSE" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['projectStatus']['status'])")
+          echo "Quality Gate Status: ${QG_STATUS}"
+          if [ "$QG_STATUS" != "OK" ]; then
+            echo "❌ 质量门禁未通过（${QG_STATUS}），详情："
+            echo "$QG_RESPONSE" | python3 -m json.tool
+            exit 1
+          fi
+          echo "✅ 质量门禁通过"
 
 # ── Stage 4: Docker 镜像构建 ──────────────────────────────────
   build:
