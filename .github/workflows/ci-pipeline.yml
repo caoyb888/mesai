@@ -228,10 +228,6 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
 
-    environment:
-      name: test
-      url: http://localhost:8000/v1/ai/health
-
     steps:
       - name: Checkout 代码
         uses: actions/checkout@v4
