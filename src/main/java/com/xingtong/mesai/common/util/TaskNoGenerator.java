@@ -2,6 +2,7 @@ package com.xingtong.mesai.common.util;
 
 import com.xingtong.mesai.common.exception.BizException;
 import com.xingtong.mesai.common.result.ResultCode;
+import com.xingtong.mesai.module.task.mapper.SeqCounterMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -73,6 +74,9 @@ public class TaskNoGenerator {
         String dateStr = LocalDate.now().format(DATE_FORMATTER);
         try {
             return generateByRedis(dateStr);
+        } catch (BizException e) {
+            // BizException 属于业务异常（如序列号超出上限），直接向上抛出，不降级
+            throw e;
         } catch (Exception e) {
             log.warn("[序列号生成] Redis 不可用，降级至 MySQL 乐观锁路径: {}", e.getMessage());
             return generateByMysql(dateStr);

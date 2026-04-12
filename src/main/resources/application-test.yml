@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 测试环境配置（application-test.yml）
+# 激活方式：SPRING_PROFILES_ACTIVE=test（CI/CD 自动注入）
+# 说明：连接测试服务器环境，所有敏感项通过 CI/CD 环境变量注入
+#       AI 只能对测试环境执行写操作（见 CLAUDE.md 4.3节）
+# ─────────────────────────────────────────────────────────────────────────────
+
+spring:
+  # ── AI 平台主数据源（测试环境 MySQL 8.x，可读写）────────────────
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: HikariPool-MesAI-Test
+      maximum-pool-size: 15
+      minimum-idle: 3
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+
+  # ── MES 系统只读数据源（PostgreSQL 15.x，只读账号）─────────────
+  # 安全约束：禁止执行任何写操作，账号为 itsm_readonly
+  mes:
+    datasource:
+      url: ${MES_DB_URL}
+      username: ${MES_DB_USER}
+      password: ${MES_DB_PASS}
+      driver-class-name: org.postgresql.Driver
+      hikari:
+        pool-name: HikariPool-MesDB-Test
+        maximum-pool-size: 5
+        minimum-idle: 2
+        connection-timeout: 10000
+        idle-timeout: 300000
+        read-only: true
+
+  # ── Redis（测试环境）─────────────────────────────────────────────
+  redis:
+    host: ${REDIS_HOST}
+    port: ${REDIS_PORT}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DB:0}
+    lettuce:
+      pool:
+        max-active: 16
+        max-idle: 8
+        min-idle: 2
+        max-wait: 3000ms
+
+# ── JWT 配置（测试环境密钥通过 CI/CD 注入）──────────────────────
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-token-expire-seconds: 28800
+    refresh-token-expire-seconds: 604800
+
+# ── 测试环境日志（INFO 级别，输出到文件）────────────────────────
+logging:
+  level:
+    com.xingtong.mesai: INFO
+    org.springframework: WARN

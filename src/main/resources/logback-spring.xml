@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    芯智云匠 MES AI 智能体平台 - Logback 日志配置
+    关联规范：Tech_Spec_MES_AI_2026.md 第六章 日志格式规范
+    关联需求：REQ-MES-AI-20260412-005（S1-5 后端项目骨架）
+
+    日志格式：时间 + 级别 + RequestId + 线程 + 类名(36位) + 消息
+    日志文件：
+      - mesai-application.log（INFO及以上，按日滚动，100MB，保留30天）
+      - mesai-error.log（ERROR级别单独记录，保留90天）
+    环境差异：
+      - dev  → DEBUG，仅输出到控制台
+      - test → INFO，输出到文件
+      - prod → INFO，输出到文件（无控制台输出）
+-->
+<configuration>
+
+    <!-- ── 属性定义 ──────────────────────────────────────────────── -->
+    <!-- LOG_PATH 通过 application.yml 中的 logging.file.path 注入 -->
+    <springProperty scope="context" name="LOG_PATH"
+                    source="logging.file.path" defaultValue="/var/log/mesai"/>
+
+    <!-- 日志格式：时间 + 级别 + RequestId(MDC) + 线程 + 类名 + 消息 -->
+    <property name="LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%level] [%X{requestId:-NO_REQ}] [%thread] %logger{36} - %msg%n"/>
+
+    <!-- 控制台彩色格式（仅用于开发环境） -->
+    <property name="CONSOLE_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight([%level]) [%cyan(%X{requestId:-NO_REQ})] [%thread] %logger{36} - %msg%n"/>
+
+    <!-- ── Appender 定义 ─────────────────────────────────────────── -->
+
+    <!-- 控制台输出（开发环境使用） -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 应用日志文件（INFO及以上，按日滚动） -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/mesai-application.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- 按日滚动，超过 100MB 自动分割 -->
+            <fileNamePattern>${LOG_PATH}/mesai-application.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <!-- 保留 30 天的日志文件 -->
+            <maxHistory>30</maxHistory>
+            <!-- 总日志文件大小上限 5GB -->
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ERROR 日志单独文件（保留 90 天，便于故障排查） -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/mesai-error.log</file>
+        <!-- 仅记录 ERROR 级别 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/mesai-error.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <!-- ERROR 日志保留 90 天，便于故障溯源 -->
+            <maxHistory>90</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ── 日志级别配置（第三方库降噪）──────────────────────────── -->
+
+    <!-- 降低 Hibernate 校验器日志级别 -->
+    <logger name="org.hibernate.validator" level="WARN"/>
+    <!-- 降低 Spring Framework 日志级别（非业务噪音） -->
+    <logger name="org.springframework" level="WARN"/>
+    <!-- 降低 MyBatis Plus 日志级别 -->
+    <logger name="com.baomidou.mybatisplus" level="WARN"/>
+    <!-- 降低 Lettuce Redis 日志级别 -->
+    <logger name="io.lettuce" level="WARN"/>
+    <!-- 降低 Netty 日志级别 -->
+    <logger name="io.netty" level="WARN"/>
+    <!-- 降低 HikariCP 启动日志级别 -->
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+
+    <!-- ── 按环境分组配置 ─────────────────────────────────────────── -->
+
+    <!-- 开发环境：DEBUG 级别，仅输出到控制台 -->
+    <springProfile name="dev">
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+        <!-- 业务包 DEBUG 输出 -->
+        <logger name="com.xingtong.mesai" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+    </springProfile>
+
+    <!-- 测试环境：INFO 级别，同时输出到控制台和文件 -->
+    <springProfile name="test">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+            <appender-ref ref="ERROR_FILE"/>
+        </root>
+    </springProfile>
+
+    <!-- 生产环境：INFO 级别，仅输出到文件（不输出到控制台） -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="FILE"/>
+            <appender-ref ref="ERROR_FILE"/>
+        </root>
+    </springProfile>
+
+</configuration>
