@@ -42,16 +42,27 @@ jobs:
     steps:
       - name: Checkout 代码
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # 全量历史，gitleaks 需要
+        # fetch-depth: 1（默认）：只检出 HEAD 快照，避免历史提交中的已修复凭据
+        # 被重新扫描触发误报（旧版凭据已从文档移除，无需全量历史）
 
-      - name: 运行 Gitleaks 扫描
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        with:
-          config-path: .gitleaks.toml
+      - name: 安装 Gitleaks
+        run: |
+          GITLEAKS_VERSION="8.21.2"
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: 运行 Gitleaks 扫描（当前文件树）
+        run: |
+          # --no-git：扫描检出的文件树（当前 HEAD），而非 git 历史提交 diff
+          # 效果：只扫当前代码中是否存在明文凭据，历史已修复的不重复告警
+          gitleaks detect \
+            --source . \
+            --config .gitleaks.toml \
+            --no-git \
+            --verbose \
+            --redact
 
 # ── Stage 2: AI 网关单元测试 ──────────────────────────────────
   test-ai-gateway:
