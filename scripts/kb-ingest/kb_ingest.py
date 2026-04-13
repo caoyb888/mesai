@@ -191,6 +191,32 @@ class ChunkSplitter:
         return result
 
 
+# ── 本地 Embedding（ChromaDB 内置，无需 API Key）──────────────
+
+class LocalEmbedder:
+    """
+    使用 ChromaDB 内置的 DefaultEmbeddingFunction 生成本地向量。
+
+    底层模型：all-MiniLM-L6-v2（首次运行自动下载 ~80MB）
+    优点：无需外部 API Key，适合本地验证和离线环境。
+    缺点：中文语义效果弱于专用中文模型，生产环境建议换 Kimi/OpenAI。
+    """
+
+    def __init__(self):
+        try:
+            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+            self._ef = DefaultEmbeddingFunction()
+            log.info("本地 Embedding 初始化完成（all-MiniLM-L6-v2）")
+        except Exception as e:
+            log.error("本地 Embedding 初始化失败：%s", e)
+            raise
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """批量生成向量"""
+        result = self._ef(texts)
+        return list(result)
+
+
 # ── Kimi Embedding ────────────────────────────────────────────
 
 class KimiEmbedder:
@@ -437,8 +463,13 @@ def load_chunks_from_dir(
     all_chunks = []
 
     if ddl_dir and ddl_dir.exists():
-        md_files = [f for f in ddl_dir.glob("*.md") if f.name != "INDEX.md"]
+        md_files = [f for f in sorted(ddl_dir.glob("*.md")) if f.name != "INDEX.md"]
         for f in md_files:
+            # 只处理属于当前模块的 Markdown 文件
+            # 判断依据：文件头部含 "**模块**：{module}" 标记
+            content = f.read_text(encoding="utf-8")
+            if f"**模块**：{module}" not in content:
+                continue
             chunks = splitter.split_markdown_file(f, chunk_type="table_card")
             for c in chunks:
                 c["module"] = module
@@ -461,6 +492,8 @@ def parse_args():
     p.add_argument("--ddl-dir",    help="DDL Markdown 目录（parsed/）")
     p.add_argument("--dict-file",  help="数据字典 Markdown 文件")
     p.add_argument("--collection", default="mes_db_structure", help="ChromaDB 集合名")
+    p.add_argument("--embed-mode", choices=["api", "local"], default="api",
+                   help="向量化模式：api=Kimi API（默认），local=本地模型（无需 API Key）")
     p.add_argument("--dry-run",    action="store_true", help="仅验证 chunk 不写入")
     return p.parse_args()
 
@@ -492,8 +525,12 @@ def main():
         return
 
     # ② 向量化
-    log.info("开始向量化（Kimi Embedding API）...")
-    embedder = KimiEmbedder(cfg)
+    if args.embed_mode == "local":
+        log.info("开始向量化（本地模型 all-MiniLM-L6-v2）...")
+        embedder = LocalEmbedder()
+    else:
+        log.info("开始向量化（Kimi Embedding API）...")
+        embedder = KimiEmbedder(cfg)
     texts = [c["text"] for c in chunks]
     try:
         from tqdm import tqdm
