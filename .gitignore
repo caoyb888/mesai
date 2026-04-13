@@ -162,3 +162,13 @@ vector_store/
 .turbo/
 .vercel/
 *.orig
+
+# ChromaDB 向量库数据（大文件，不纳入版本控制）
+data/chromadb/
+scripts/kb-ingest/data/chromadb/
+
+# SonarQube 扫描缓存
+.scannerwork/
+
+# 训练脚本中间目录（如重复运行产生的嵌套目录）
+scripts/kb-ingest/scripts/
