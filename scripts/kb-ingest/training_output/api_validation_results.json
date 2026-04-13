@@ -1,0 +1,549 @@
+[
+  {
+    "id": "IT-API-Auth-01",
+    "module": "认证",
+    "difficulty": "⭐",
+    "scenario": "前端页面需要实现用户登录功能。用户输入用户名和密码后，请描述调用哪个接口、需要传递哪些参数，以及成功后应从响应中提取哪些字段用于后续请求。",
+    "response": "### API 调用方案\n\n#### 1. 调用接口\n- **方法**：POST\n- **完整路径**：`/api/v1/auth/login`\n\n#### 2. 请求参数/请求体\n- **请求体（application/json）**：\n  - **字段**：`accountNo`\n    - **类型**：string\n    - **必填**：是\n    - **示例值**：`\"user123\"`\n  - **字段**：`password`\n    - **类型**：string\n    - **必填**：是\n    - **示例值**：`\"password123\"`\n  - **字段**：`captchaToken`\n    - **类型**：string\n    - **必填**：否\n    - **说明**：如果需要验证码验证，则提供验证码 Token\n    - **示例值**：`\"captchaToken123\"`\n\n**示例请求体**：\n```json\n{\n  \"accountNo\": \"user123\",\n  \"password\": \"password123\",\n  \"captchaToken\": \"captchaToken123\"\n}\n```\n\n#### 3. 响应中的关键字段说明\n- **字段**：`code`\n  - **类型**：integer\n  - **必填**：是\n  - **说明**：业务状态码，6 位数字，用于标识请求是否成功。\n- **字段**：`message`\n  - **类型**：string\n  - **必填**：是\n  - **说明**：提示信息（中文），用于向用户展示操作结果。\n- **字段**：`data`\n  - **类型**：object\n  - **必填**：是\n  - **说明**：业务数据，失败时为 null。\n  - **字段**：`data.accessToken`\n    - **类型**：string\n    - **必填**：是（如果登录成功）\n    - **说明**：Access Token，用于后续请求的认证。\n  - **字段**：`data.refreshToken`\n    - **类型**：string\n    - **必填**：是（如果登录成功）\n    - **说明**：Refresh Token，用于刷新 Access Token。\n  - **字段**：`data.expiresIn`\n    - **类型**：integer\n    - **必填**：是（如果登录成功）\n    - **说明**：Access Token 有效期（秒），默认 7200。\n  - **字段**：`data.userInfo`\n    - **类型**：object(UserBasicInfo)\n    - **必填**：是（如果登录成功）\n    - **说明**：用户基本信息。\n\n#### 4. 注意事项\n- **权限要求**：免鉴权接口，不需要 JWT Token。\n- **参数格式**：确保请求体中的参数格式正确，特别是密码和验证码（如果需要）。\n- **连续失败锁定**：如果连续登录失败 5 次，账号将被锁定，请注意错误处理和用户提示。\n- **验证码处理**：如果业务场景中包含验证码验证，确保正确处理 `captchaToken` 参数。\n- **安全性**：在处理用户密码时，确保使用 HTTPS 协议，保护用户数据安全。\n\n通过以上方案，前端页面可以实现用户登录功能，并在成功后获取必要的 Token 和用户信息，用于后续的请求认证和用户操作。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "POST /auth/login",
+        "max_score": 30,
+        "score": 30,
+        "hit": true
+      },
+      {
+        "check": "请求体 accountNo",
+        "keyword": "accountNo",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "请求体 password",
+        "keyword": "password",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      },
+      {
+        "check": "响应字段 accessToken",
+        "keyword": "accessToken",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "响应字段 refreshToken",
+        "keyword": "refreshToken",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:26:38.032787"
+  },
+  {
+    "id": "IT-API-Auth-02",
+    "module": "认证",
+    "difficulty": "⭐⭐",
+    "scenario": "用户的 accessToken 即将过期（8小时有效期），前端需要在不重新登录的情况下获取新 Token。请描述具体调用哪个接口、传递什么参数，以及旧 Token 的处理方式。",
+    "response": "### API 调用方案\n\n#### 1. 调用哪个接口（方法 + 完整路径）\n\n- **方法**：POST\n- **完整路径**：`/api/v1/auth/refresh`\n\n#### 2. 请求参数/请求体（给出关键字段名和示例值）\n\n**请求体（application/json）**：\n\n| 字段         | 类型   | 必填 | 示例值                | 说明         |\n|------------|------|----|---------------------|------------|\n| `refreshToken` | string | ✅  | `\"[JWT_TOKEN_REDACTED]\"` | 用户的 Refresh Token |\n\n#### 3. 响应中的关键字段说明\n\n**响应（200）**：刷新成功\n\n| 字段         | 类型   | 必填 | 说明         |\n|------------|------|----|------------|\n| `code`     | integer | ✅  | 业务状态码，6 位数字 |\n| `message`  | string | ✅  | 提示信息（中文）   |\n| `data`     | object | ✅  | 业务数据，失败时为 null |\n| `traceId`  | string | ✅  | 链路追踪 ID     |\n| `data.accessToken` | string |  | 新的 Access Token |\n| `data.refreshToken` | string |  | 新的 Refresh Token |\n| `data.expiresIn` | integer |  | Access Token 有效期（秒） |\n\n#### 4. 注意事项（权限要求、参数格式等）\n\n- **权限要求**：免鉴权接口，不需要提供 JWT Bearer Token。\n- **参数格式**：确保 `refreshToken` 字段的值是有效的，并且是 Base64 编码的字符串。\n- **旧 Token 处理方式**：根据接口文档说明，使用 Refresh Token 换取新的 Token 对时，会采用旋转机制，旧 Refresh Token 立即失效。因此，在成功获取新的 Token 对后，前端应立即停止使用旧的 Refresh Token，并更新为新的 Refresh Token。\n- **异常处理**：如果刷新 Token 接口返回错误（如 `code` 不为 200），前端需要根据错误码和提示信息进行相应的异常处理，可能需要引导用户重新登录。\n- **安全性**：由于涉及到 Token 的刷新，确保请求在安全的 HTTPS 连接中进行，以防止中间人攻击。\n- **调用频率**：虽然接口支持免鉴权，但应避免频繁调用，以免对服务造成不必要的压力。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "POST /auth/refresh",
+        "max_score": 35,
+        "score": 35,
+        "hit": true
+      },
+      {
+        "check": "请求体 refreshToken",
+        "keyword": "refreshToken",
+        "max_score": 30,
+        "score": 30,
+        "hit": true
+      },
+      {
+        "check": "旋转机制/旧Token失效",
+        "keyword": "失效",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "响应 accessToken",
+        "keyword": "accessToken",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:26:49.274109"
+  },
+  {
+    "id": "IT-API-User-01",
+    "module": "用户与权限",
+    "difficulty": "⭐",
+    "scenario": "IT 管理员需要查看系统中所有处于「待审核」状态的用户列表，并按照部门筛选（部门ID已知）。请描述调用哪个接口、需要传递哪些查询参数。",
+    "response": "### 1. 调用接口\n\n**方法 + 完整路径**：\n- `GET` 请求\n- `/api/v1/users`\n\n### 2. 请求参数/请求体\n\n**查询参数**：\n\n| 参数名 | 类型 | 必填 | 示例值 | 说明 |\n|--------|------|------|--------|------|\n| `page` | integer | ❌ | 1 | 页码，从 1 开始 |\n| `pageSize` | integer | ❌ | 10 | 每页条数，最大 100 |\n| `keyword` | string | ❌ |  | 搜索关键词 |\n| `deptId` | string | ❌ | `\"123456\"` | 已知的部门 ID |\n| `status` | integer[0/1/2] | ❌ | `2` | 状态筛选（0禁用 1启用 2待审核） |\n\n**示例请求**：\n```\nGET /api/v1/users?page=1&pageSize=10&deptId=123456&status=2\n```\n\n### 3. 响应中的关键字段说明\n\n**响应（200）**：\n\n| 字段 | 类型 | 必填 | 说明 |\n|------|------|------|------|\n| `code` | integer | ✅ | 业务状态码，6 位数字 |\n| `message` | string | ✅ | 提示信息（中文） |\n| `data` | object | ✅ | 业务数据，失败时为 null |\n| `traceId` | string | ✅ | 链路追踪 ID |\n| `data.list` | array(object) |  | 用户列表 |\n| `data.total` | integer |  | 总记录数 |\n| `data.page` | integer |  | 当前页码 |\n| `data.pageSize` | integer |  | 每页条数 |\n| `data.totalPages` | integer |  | 总页数 |\n\n### 4. 注意事项\n\n- **权限要求**：需要有效的 JWT Bearer Token 进行鉴权。\n- **参数格式**：确保 `deptId` 和 `status` 参数的值符合预期的格式和范围。\n- **分页参数**：`page` 和 `pageSize` 参数可以调整以浏览不同页码的用户列表。\n- **状态筛选**：`status` 参数设置为 `2` 以筛选出所有处于「待审核」状态的用户。\n- **安全性**：确保 JWT Token 的安全性，避免泄露或被未授权访问。\n- **错误处理**：准备好处理可能的 API 错误响应，例如 `401 Unauthorized`（未授权）或 `403 Forbidden`（禁止访问）。\n\n通过以上调用方案，IT 管理员可以有效地查看系统中所有处于「待审核」状态的用户列表，并按照部门筛选。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "GET /users",
+        "max_score": 30,
+        "score": 30,
+        "hit": true
+      },
+      {
+        "check": "状态参数 status=2",
+        "keyword": "status",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "部门筛选 deptId",
+        "keyword": "deptId",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "分页参数 page/pageSize",
+        "keyword": "page",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:27:01.270847"
+  },
+  {
+    "id": "IT-API-User-02",
+    "module": "用户与权限",
+    "difficulty": "⭐⭐",
+    "scenario": "新员工注册申请已提交，IT 审核专员需要审核通过该用户。请描述调用哪个接口，路径参数是什么，以及审核通过后用户的状态会如何变化。",
+    "response": "### API 调用方案\n\n#### 1. 调用哪个接口（方法 + 完整路径）\n\n- **接口**：POST `/users/{id}/approve`\n- **完整路径**：`/api/v1/users/{id}/approve`\n\n#### 2. 请求参数/请求体\n\n由于接口 `POST /users/{id}/approve` 不需要额外的请求参数或请求体，路径参数 `id` 是必须的，用于指定需要审核通过的用户 ID。\n\n- **路径参数**：\n  - `id`：用户的唯一标识符，例如 `\"12345\"`。\n\n#### 3. 响应中的关键字段说明\n\n- **响应（200）**：审核通过\n  - `code`：业务状态码，6 位数字，例如 `\"000000\"` 表示成功。\n  - `message`：提示信息（中文），例如 `\"用户审核通过\"`。\n  - `data`：业务数据，失败时为 null，成功时可能包含审核通过的用户信息。\n  - `traceId`：链路追踪 ID，用于问题排查和日志跟踪。\n\n#### 4. 注意事项\n\n- **权限要求**：需要 JWT Bearer Token 进行鉴权，确保只有具有相应权限的 IT 审核专员可以调用此接口。\n- **参数格式**：路径参数 `id` 必须是一个有效的用户 ID，否则会返回错误。\n- **状态变化**：审核通过后，用户的状态将从 `2`（待审核）变为 `1`（启用）。\n- **安全性**：确保 JWT Token 的安全性，避免泄露或被未授权使用。\n- **错误处理**：准备好处理可能的错误响应，例如 `404`（用户不存在）或 `403`（权限不足）。\n\n### 总结\n\nIT 审核专员需要调用 `POST /api/v1/users/{id}/approve` 接口，通过路径参数 `id` 指定需要审核通过的用户。审核通过后，用户的状态将从待审核变为启用，允许用户访问系统资源。调用此接口需要有效的 JWT Bearer Token，并且要注意安全性和错误处理。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "POST /users/{id}/approve",
+        "max_score": 40,
+        "score": 40,
+        "hit": true
+      },
+      {
+        "check": "路径参数 id",
+        "keyword": "id",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "用户状态变为启用/通过",
+        "keyword": "通过",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "鉴权要求 JWT",
+        "keyword": "JWT",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:27:20.963853"
+  },
+  {
+    "id": "IT-API-User-03",
+    "module": "用户与权限",
+    "difficulty": "⭐⭐⭐",
+    "scenario": "需要将某个运维工程师（ID已知）分配到「一级支持组」和「设备管理组」两个角色。请描述调用哪个接口、请求体格式，以及该操作是覆盖现有角色还是追加角色。",
+    "response": "### API 调用方案\n\n#### 1. 调用哪个接口（方法 + 完整路径）\n\n- **接口**：`PUT /users/{id}/roles`\n- **方法**：PUT\n- **完整路径**：`/api/v1/users/{id}/roles`\n\n#### 2. 请求参数/请求体（给出关键字段名和示例值）\n\n- **请求体（application/json）**：\n  ```json\n  {\n    \"roleIds\": [\"role_id_1\", \"role_id_2\"]\n  }\n  ```\n  - **关键字段名**：\n    - `roleIds`：角色 ID 列表\n  - **示例值**：\n    - `role_id_1`：一级支持组的角色 ID\n    - `role_id_2`：设备管理组的角色 ID\n\n#### 3. 响应中的关键字段说明\n\n- **响应（200）**：分配成功\n  - **字段** | **类型** | **必填** | **说明**\n  - `code` | integer | ✅ | 业务状态码，6 位数字\n  - `message` | string | ✅ | 提示信息（中文）\n  - `data` | object | ✅ | 业务数据，失败时为 null\n  - `traceId` | string | ✅ | 链路追踪 ID\n\n#### 4. 注意事项（权限要求、参数格式等）\n\n- **权限要求**：\n  - 需要 JWT Bearer Token 进行鉴权。\n- **参数格式**：\n  - `id`：运维工程师的 ID，必须为字符串。\n  - `roleIds`：角色 ID 列表，必须为字符串数组。\n- **覆盖还是追加**：\n  - 该操作会覆盖用户现有的角色，而不是追加。如果需要保留原有角色并追加新角色，需要先查询用户当前的角色列表，然后将新角色 ID 添加到该列表中，再进行更新。\n- **其他注意事项**：\n  - 确保提供的 `roleIds` 是有效的，且对应的角色存在于系统中。\n  - 确保 JWT Bearer Token 有效且具有相应的权限。\n  - 请求体中的字段名和值必须与 API 文档完全一致。\n\n### 完整 API 调用示例\n\n```http\nPUT /api/v1/users/{id}/roles HTTP/1.1\nHost: example.com\nAuthorization: Bearer {JWT_Token}\nContent-Type: application/json\n\n{\n  \"roleIds\": [\"role_id_1\", \"role_id_2\"]\n}\n```\n\n- **请求头**：\n  - `Authorization`：Bearer {JWT_Token}，其中 `{JWT_Token}` 是有效的 JWT Bearer Token。\n  - `Content-Type`：application/json，指定请求体的格式。\n- **请求体**：\n  - `roleIds`：包含两个角色 ID 的数组，分别对应「一级支持组」和「设备管理组」。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "PUT /users/{id}/roles",
+        "max_score": 35,
+        "score": 35,
+        "hit": true
+      },
+      {
+        "check": "请求体 roleIds 数组",
+        "keyword": "roleIds",
+        "max_score": 30,
+        "score": 30,
+        "hit": true
+      },
+      {
+        "check": "PUT 语义覆盖/替换",
+        "keyword": "覆盖",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "路径参数 id",
+        "keyword": "id",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:27:33.816509"
+  },
+  {
+    "id": "IT-API-Ticket-01",
+    "module": "工单核心",
+    "difficulty": "⭐",
+    "scenario": "用户发现办公室打印机无法使用，需要通过 ITSM 提交一张「高优先级」的设备故障工单。请描述创建工单的接口、必填请求体字段，以及响应中会返回哪个关键字段用于后续跟踪。",
+    "response": "### 1. 调用接口\n\n**接口**：`POST /tickets`\n\n### 2. 请求参数/请求体\n\n**请求体（application/json）**：\n\n```json\n{\n  \"modelId\": \"打印机设备故障\",\n  \"title\": \"办公室打印机无法使用\",\n  \"priority\": \"HIGH\",\n  \"description\": \"打印机突然停止工作，无法打印任何文档。\",\n  \"formData\": {\n    \"故障现象\": \"无法打印\",\n    \"影响范围\": \"整个办公室\"\n  },\n  \"ciIds\": [\"打印机001\"],\n  \"source\": \"用户报告\"\n}\n```\n\n### 3. 响应中的关键字段说明\n\n**响应（200）**：\n\n- `code`：业务状态码，6 位数字，用于标识请求是否成功。\n- `message`：提示信息（中文），描述操作结果。\n- `data`：业务数据，包含工单的基本信息，失败时为 null。\n- `traceId`：链路追踪 ID，用于问题排查和日志跟踪。\n- `data.id`：工单的唯一标识符，用于后续跟踪和操作。\n- `data.ticketNo`：工单编号，用于用户查询和客服沟通。\n- `data.status`：工单当前状态，如新建、处理中等。\n- `data.title`：工单标题，即用户报告的问题描述。\n- `data.priority`：工单优先级，如 HIGH。\n- `data.assignedGroupId`：当前处理工单的用户组 ID。\n- `data.assignedGroupName`：当前处理工单的用户组名称。\n- `data.slaDeadlineResponse`：SLA 响应截止时间。\n- `data.slaDeadlineResolve`：SLA 解决截止时间。\n- `data.createdAt`：工单创建时间。\n\n### 4. 注意事项\n\n- **权限要求**：需要有效的 JWT Bearer Token 进行鉴权。\n- **参数格式**：所有请求参数必须符合接口文档中的要求，特别是优先级字段 `priority` 必须是枚举值中的一个（LOW/MEDIUM/HIGH/CRITICAL）。\n- **请求体**：请求体必须为 JSON 格式，且包含所有必填字段。\n- **字段值**：`modelId`、`title`、`priority` 为必填字段，`description`、`formData`、`ciIds`、`source` 根据实际情况填写。\n- **错误处理**：如果响应码不是 200，需要根据 `code` 和 `message` 字段进行错误处理。\n- **安全性**：确保 JWT Token 的安全性，避免泄露或被篡改。\n\n通过以上步骤，可以完成用户发现办公室打印机无法使用时，通过 ITSM 提交一张「高优先级」的设备故障工单的 API 调用方案。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "POST /tickets",
+        "max_score": 30,
+        "score": 30,
+        "hit": true
+      },
+      {
+        "check": "必填 modelId",
+        "keyword": "modelId",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "必填 title",
+        "keyword": "title",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      },
+      {
+        "check": "priority=HIGH",
+        "keyword": "HIGH",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      },
+      {
+        "check": "响应 ticketNo 工单号",
+        "keyword": "ticketNo",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:27:46.570826"
+  },
+  {
+    "id": "IT-API-Ticket-02",
+    "module": "工单核心",
+    "difficulty": "⭐⭐",
+    "scenario": "工单（工单ID已知）目前在「一级支持组」，但问题超出其处理范围，需要转给「网络运维组」处理。请描述调用哪个接口、请求体需要传递哪些参数。",
+    "response": "### 1. 调用接口\n\n**接口**：`POST /tickets/{id}/transfer`\n\n### 2. 请求参数/请求体\n\n**路径参数**：\n\n- `id`：工单ID（已知）\n\n**请求体（application/json）**：\n\n```json\n{\n  \"targetGroupId\": \"network-ops-group-id\", // 网络运维组的ID\n  \"reason\": \"问题超出一级支持组处理范围\" // 转单原因\n}\n```\n\n### 3. 响应中的关键字段说明\n\n**响应（200）**：\n\n- `code`：业务状态码，6位数字，表示操作结果的状态。\n- `message`：提示信息（中文），描述操作结果的详细信息。\n- `data`：业务数据，失败时为null。\n- `traceId`：链路追踪ID，用于问题排查。\n\n### 4. 注意事项\n\n- **权限要求**：当前处理人或管理员权限。只有具备相应权限的用户才能执行转单操作。\n- **参数格式**：`targetGroupId` 必须是有效的网络运维组ID，否则请求将失败。\n- **请求体**：如果指定了 `targetUserId`，则必须是目标用户组内的有效用户ID，否则可以不指定，由系统自动分配处理人。\n- **转单原因**：`reason` 字段应详细描述转单的具体原因，以便记录和审计。\n- **JWT Token**：请求必须包含有效的JWT Bearer Token进行鉴权。\n- **错误处理**：在实际调用中，需要对可能的HTTP错误状态（如401未授权、403禁止访问等）进行处理，并根据`code`和`message`字段提供用户友好的错误提示。\n- **安全性**：确保JWT Token的安全传输，避免在不安全的网络环境中泄露。\n\n通过上述方案，可以完成将工单从「一级支持组」转移到「网络运维组」的操作。",
+    "score": 55,
+    "max_score": 100,
+    "score_pct": 55.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "POST /tickets/{id}/transfer",
+        "max_score": 35,
+        "score": 35,
+        "hit": true
+      },
+      {
+        "check": "请求体 toGroupId 目标组",
+        "keyword": "toGroupId",
+        "max_score": 30,
+        "score": 0,
+        "hit": false
+      },
+      {
+        "check": "路径参数 id 工单ID",
+        "keyword": "id",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "可选备注 remark",
+        "keyword": "remark",
+        "max_score": 15,
+        "score": 0,
+        "hit": false
+      }
+    ],
+    "timestamp": "2026-04-13T14:27:55.602321"
+  },
+  {
+    "id": "IT-API-Ticket-03",
+    "module": "工单核心",
+    "difficulty": "⭐⭐",
+    "scenario": "工单处理完成后，需要关闭工单并记录处理说明。请描述关闭工单的完整接口调用（路径、方法、请求体），以及关闭后工单状态的变化。",
+    "response": "### 1. 调用接口\n\n**接口**：`POST /tickets/{id}/close`\n\n### 2. 请求参数/请求体\n\n**请求体（application/json）**：\n\n| 字段 | 类型 | 必填 | 说明 |\n|------|------|------|------|\n| `remark` | string | ✅ | 关闭工单的处理说明 |\n\n**示例请求体**：\n\n```json\n{\n  \"remark\": \"问题已解决，客户满意。\"\n}\n```\n\n### 3. 响应中的关键字段说明\n\n**响应（200）**：关闭工单成功\n\n| 字段 | 类型 | 必填 | 说明 |\n|------|------|------|------|\n| `code` | integer | ✅ | 业务状态码，6 位数字 |\n| `message` | string | ✅ | 提示信息（中文） |\n| `data` | object | ✅ | 业务数据，失败时为 null |\n| `traceId` | string | ✅ | 链路追踪 ID |\n\n### 4. 注意事项\n\n- **权限要求**：需要 Bearer Token 鉴权，只有当前处理人或管理员权限的用户可以关闭工单。\n- **参数格式**：`id` 必须是有效的工单 ID，`remark` 应为描述性文本，不能为空。\n- **状态变化**：工单状态将从当前状态（如“处理中”）变为“已关闭”。\n- **错误处理**：如果工单已关闭或不存在，应返回相应的错误码和提示信息。\n\n### 完整 API 调用示例\n\n```http\nPOST /api/v1/tickets/{id}/close\nAuthorization: Bearer <JWT_TOKEN>\nContent-Type: application/json\n\n{\n  \"remark\": \"问题已解决，客户满意。\"\n}\n```\n\n**预期响应**：\n\n```json\n{\n  \"code\": 200,\n  \"message\": \"工单已成功关闭\",\n  \"data\": {\n    \"id\": \"12345\",\n    \"status\": \"CLOSED\",\n    \"remark\": \"问题已解决，客户满意。\"\n  },\n  \"traceId\": \"xxxx-xxxx-xxxx\"\n}\n```\n\n确保在实际调用时替换 `<JWT_TOKEN>` 为有效的 JWT Bearer Token，并且 `id` 替换为实际的工单 ID。",
+    "score": 75,
+    "max_score": 100,
+    "score_pct": 75.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "POST /tickets/{id}/close",
+        "max_score": 35,
+        "score": 35,
+        "hit": true
+      },
+      {
+        "check": "请求体 resolution 处理说明",
+        "keyword": "resolution",
+        "max_score": 25,
+        "score": 0,
+        "hit": false
+      },
+      {
+        "check": "工单状态变为已关闭/CLOSED",
+        "keyword": "CLOSED",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "路径参数 id",
+        "keyword": "id",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:28:06.048999"
+  },
+  {
+    "id": "IT-API-Ticket-04",
+    "module": "工单核心",
+    "difficulty": "⭐⭐⭐",
+    "scenario": "管理员需要查看某工单（ID已知）的完整流转历史记录，了解工单从创建到当前状态的每一步操作记录。请描述调用哪个接口，响应中包含哪些关键字段。",
+    "response": "### API 调用方案\n\n#### 1. 调用哪个接口\n\n- **方法**：GET\n- **完整路径**：`/api/v1/tickets/{id}/flow-logs`\n\n#### 2. 请求参数/请求体\n\n由于这是一个 GET 请求，不需要请求体，但是需要在 URL 中包含工单的 ID。以下是请求参数：\n\n- **路径参数**：\n\n  | 参数名 | 类型   | 必填 | 示例值       | 说明     |\n  |--------|--------|------|-------------|----------|\n  | id     | string | ✅   | \"12345678\"   | 工单的 ID |\n\n#### 3. 响应中的关键字段说明\n\n响应将包含工单流转历史记录的关键信息，以下是可能包含的关键字段：\n\n- **code**：业务状态码，6 位数字。\n- **message**：提示信息（中文）。\n- **data**：业务数据，失败时为 null。\n- **traceId**：链路追踪 ID。\n- **data**：包含具体的流转历史记录，可能的结构如下：\n\n  - **flowLogs**：流转日志列表，每个日志项可能包含以下字段：\n    - **id**：流转日志的 ID。\n    - **ticketId**：关联的工单 ID。\n    - **action**：操作类型（如：创建、接单、转单、挂起、恢复、提交审核、审核通过、审核驳回、关闭等）。\n    - **status**：操作后工单的状态。\n    - **operatorId**：操作人 ID。\n    - **operatorName**：操作人姓名。\n    - **createdAt**：操作时间。\n    - **reason**：操作原因或备注。\n\n#### 4. 注意事项\n\n- **权限要求**：需要 JWT Bearer Token 进行鉴权，只有管理员或有权限的用户才能查看工单的流转历史记录。\n- **参数格式**：工单 ID 必须是有效的字符串，且在系统中存在对应的工单。\n- **安全性**：确保 JWT Token 是有效的，并且没有过期。\n- **错误处理**：如果响应码不是 200，需要根据响应的 `code` 和 `message` 字段进行相应的错误处理。\n- **数据量**：流转历史记录可能很长，需要考虑分页或者限制返回的数据量，以避免一次性加载过多数据。\n\n### 示例调用\n\n```http\nGET /api/v1/tickets/12345678/flow-logs\nAuthorization: Bearer <your_jwt_token>\n```\n\n在这个示例中，`<your_jwt_token>` 需要替换为有效的 JWT Token。",
+    "score": 75,
+    "max_score": 100,
+    "score_pct": 75.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "GET /tickets/{id}/flow-logs",
+        "max_score": 40,
+        "score": 40,
+        "hit": true
+      },
+      {
+        "check": "响应 fromStatus/toStatus 状态变化",
+        "keyword": "fromStatus",
+        "max_score": 25,
+        "score": 0,
+        "hit": false
+      },
+      {
+        "check": "响应 action 操作动作",
+        "keyword": "action",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "响应 operatorName 操作人",
+        "keyword": "operatorName",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:28:18.673897"
+  },
+  {
+    "id": "IT-API-SLA-01",
+    "module": "SLA 管理",
+    "difficulty": "⭐⭐",
+    "scenario": "IT 经理需要查看本月的 SLA 达标情况，包括响应达标率、解决达标率和平均处理时长。请描述调用哪个接口，以及响应中的关键统计字段名称。",
+    "response": "### API 调用方案\n\n#### 1. 调用接口\n\n- **方法**：GET\n- **完整路径**：`/api/v1/sla/statistics`\n\n#### 2. 请求参数/请求体\n\n**查询参数**：\n\n| 参数名 | 类型 | 必填 | 示例值 | 说明 |\n|--------|------|------|--------|------|\n| `startDate` | string | ✅ | `2026-04-01` | 查询开始日期，格式为 `YYYY-MM-DD` |\n| `endDate` | string | ✅ | `2026-04-30` | 查询结束日期，格式为 `YYYY-MM-DD` |\n| `groupId` | string |  | `group123` | 可选，根据需要填写 |\n| `modelId` | string |  | `model456` | 可选，根据需要填写 |\n\n**请求体**：无\n\n#### 3. 响应中的关键字段说明\n\n| 字段 | 类型 | 说明 |\n|------|------|------|\n| `code` | integer | 业务状态码，6 位数字 |\n| `message` | string | 提示信息（中文） |\n| `data` | object | 业务数据，失败时为 null |\n| `traceId` | string | 链路追踪 ID |\n| `data.totalTickets` | integer | 总工单数 |\n| `data.responseAchieveRate` | number | 响应达成率（0-1） |\n| `data.resolveAchieveRate` | number | 解决达成率（0-1） |\n| `data.avgResponseMinutes` | integer | 平均响应时长（分钟） |\n| `data.avgResolveMinutes` | integer | 平均解决时长（分钟） |\n| `data.breachCount` | integer | 违规次数 |\n| `data.byPriority` | object | 按优先级分类的统计数据 |\n\n#### 4. 注意事项\n\n- **权限要求**：需要有效的 JWT Bearer Token 进行鉴权。\n- **参数格式**：`startDate` 和 `endDate` 必须为 `YYYY-MM-DD` 格式的字符串。\n- **请求头**：需要在请求头中包含 `Authorization: Bearer <your_token>`，其中 `<your_token>` 是有效的 JWT Token。\n- **错误处理**：如果响应状态码不是 200，需要根据错误码和消息进行相应的错误处理。\n- **数据安全**：确保 JWT Token 的安全性，避免泄露。\n- **API 限制**：根据实际使用情况，可能需要关注 API 的频率限制和数据量限制。\n\n通过以上方案，IT 经理可以查看本月的 SLA 达标情况，包括响应达标率、解决达标率和平均处理时长。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "GET /sla/statistics",
+        "max_score": 35,
+        "score": 35,
+        "hit": true
+      },
+      {
+        "check": "响应 responseAchieveRate 响应达标率",
+        "keyword": "responseAchieveRate",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "响应 resolveAchieveRate 解决达标率",
+        "keyword": "resolveAchieveRate",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "响应 avgResponseMinutes 平均响应时长",
+        "keyword": "avgResponseMinutes",
+        "max_score": 15,
+        "score": 15,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:28:31.356388"
+  },
+  {
+    "id": "IT-API-SLA-02",
+    "module": "SLA 管理",
+    "difficulty": "⭐⭐",
+    "scenario": "需要创建一个新的 SLA 策略：7x24小时服务时间，高优先级工单响应时限 2 小时，解决时限 8 小时。请描述接口路径、方法和必填请求体字段。",
+    "response": "### 完整的 API 调用方案\n\n#### 1. 调用哪个接口（方法 + 完整路径）\n\n- **方法**：POST\n- **完整路径**：`/api/v1/sla-policies`\n\n#### 2. 请求参数/请求体（给出关键字段名和示例值）\n\n**请求体（application/json）**：\n\n```json\n{\n  \"name\": \"7x24小时服务时间策略\",\n  \"serviceTimeType\": \"7x24\",\n  \"serviceTimeJson\": {\n    \"startTime\": \"00:00\",\n    \"endTime\": \"23:59\"\n  },\n  \"responseMedium\": 2,\n  \"responseHigh\": 2,\n  \"responseCritical\": 2,\n  \"resolveLow\": 8,\n  \"resolveMedium\": 8,\n  \"resolveHigh\": 8,\n  \"resolveCritical\": 8\n}\n```\n\n**关键字段说明**：\n\n- `name`：策略名称，必填，示例值：\"7x24小时服务时间策略\"。\n- `serviceTimeType`：服务时间类型，必填，示例值：\"7x24\"。\n- `serviceTimeJson`：服务时间的具体配置，可选，示例值：`{\"startTime\": \"00:00\", \"endTime\": \"23:59\"}`，表示全天服务。\n- `responseMedium`、`responseHigh`、`responseCritical`：响应时限，单位为小时，必填，示例值：2小时。\n- `resolveLow`、`resolveMedium`、`resolveHigh`、`resolveCritical`：解决时限，单位为小时，必填，示例值：8小时。\n\n#### 3. 响应中的关键字段说明\n\n**响应（200）**：\n\n- `code`：业务状态码，6位数字，表示请求是否成功。\n- `message`：提示信息（中文），描述操作结果。\n- `data`：业务数据，成功时包含创建的SLA策略信息，失败时为null。\n- `traceId`：链路追踪ID，用于问题排查。\n\n#### 4. 注意事项（权限要求、参数格式等）\n\n- **权限要求**：需要有效的JWT Bearer Token进行鉴权。\n- **参数格式**：所有字段名称必须与ITSM API文档完全一致。\n- **请求体格式**：必须使用`application/json`格式。\n- **时间格式**：服务时间的`startTime`和`endTime`应遵循24小时制，格式为\"HH:MM\"。\n- **响应时限和解决时限**：单位为小时，整数表示。\n- **服务时间类型**：`serviceTimeType`字段应与实际服务时间类型匹配，例如\"7x24\"表示7天24小时服务。\n- **错误处理**：如果响应码不是200，需要根据`code`和`message`字段进行相应的错误处理。\n\n通过以上方案，可以成功创建一个新的SLA策略，满足7x24小时服务时间，高优先级工单响应时限2小时，解决时限8小时的业务需求。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "接口路径",
+        "keyword": "POST /sla-policies",
+        "max_score": 35,
+        "score": 35,
+        "hit": true
+      },
+      {
+        "check": "serviceTimeType=24x7",
+        "keyword": "serviceTimeType",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "responseHigh=120（分钟）",
+        "keyword": "responseHigh",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      },
+      {
+        "check": "resolveHigh=480（分钟）",
+        "keyword": "resolveHigh",
+        "max_score": 20,
+        "score": 20,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:28:44.045953"
+  },
+  {
+    "id": "IT-API-KB-01",
+    "module": "知识库",
+    "difficulty": "⭐⭐",
+    "scenario": "IT 工程师处理完一个常见故障后，希望将解决方案录入知识库，供其他同事参考。请描述创建知识库文章的接口，以及文章发布前需要经历哪些审核步骤（接口调用顺序）。",
+    "response": "### API 调用方案\n\n#### 1. 创建知识条目（草稿）\n\n**接口**：POST /kb/articles\n\n**请求参数/请求体**：\n\n```json\n{\n  \"categoryId\": \"123\", // 示例分类ID\n  \"title\": \"常见故障解决方案\",\n  \"summary\": \"描述故障现象和解决方案的摘要\",\n  \"keywords\": \"故障,解决方案\",\n  \"content\": \"<p>这里是HTML格式的故障解决方案详细内容</p>\",\n  \"probeRefId\": \"optional-probe-ref-id\",\n  \"attachmentIds\": [\"attachment-id-1\", \"attachment-id-2\"]\n}\n```\n\n**响应中的关键字段说明**：\n\n- `code`：业务状态码，6位数字，表示操作结果。\n- `message`：提示信息（中文），描述操作结果或错误信息。\n- `data`：业务数据，成功时包含创建的知识条目信息，失败时为null。\n- `traceId`：链路追踪ID，用于问题排查。\n\n**注意事项**：\n\n- 权限要求：需要JWT Bearer Token进行鉴权。\n- 参数格式：确保`categoryId`、`title`、`content`字段不为空，`content`字段应为HTML格式的富文本内容。\n\n#### 2. 提交审核\n\n**接口**：POST /kb/articles/{id}/submit-review\n\n**请求参数/请求体**：\n\n- 路径参数：`id`，知识条目的ID，从创建知识条目（草稿）的响应中获取。\n\n**响应中的关键字段说明**：\n\n- `code`：业务状态码，6位数字，表示操作结果。\n- `message`：提示信息（中文），描述操作结果或错误信息。\n- `data`：业务数据，成功时包含提交审核的知识条目信息，失败时为null。\n- `traceId`：链路追踪ID，用于问题排查。\n\n**注意事项**：\n\n- 权限要求：仅作者本人可操作，需要JWT Bearer Token进行鉴权。\n\n#### 3. 审核通过\n\n**接口**：POST /kb/articles/{id}/approve\n\n**请求参数/请求体**：\n\n- 路径参数：`id`，知识条目的ID，从提交审核的响应中获取。\n\n**响应中的关键字段说明**：\n\n- `code`：业务状态码，6位数字，表示操作结果。\n- `message`：提示信息（中文），描述操作结果或错误信息。\n- `data`：业务数据，成功时包含审核通过的知识条目信息，失败时为null。\n- `traceId`：链路追踪ID，用于问题排查。\n\n**注意事项**：\n\n- 权限要求：知识库审核员权限，且不能是作者本人，需要JWT Bearer Token进行鉴权。\n\n#### 4. 审核驳回\n\n**接口**：POST /kb/articles/{id}/reject\n\n**请求参数/请求体**：\n\n```json\n{\n  \"comment\": \"请补充更多故障处理细节\"\n}\n```\n\n- 路径参数：`id`，知识条目的ID，从提交审核的响应中获取。\n\n**响应中的关键字段说明**：\n\n- `code`：业务状态码，6位数字，表示操作结果。\n- `message`：提示信息（中文），描述操作结果或错误信息。\n- `data`：业务数据，成功时包含审核驳回的知识条目信息，失败时为null。\n- `traceId`：链路追踪ID，用于问题排查。\n\n**注意事项**：\n\n- 权限要求：知识库审核员权限，且不能是作者本人，需要JWT Bearer Token进行鉴权。\n- 参数格式：`comment`字段不能为空，应提供具体的驳回理由。\n\n### 接口调用顺序\n\n1. 创建知识条目（草稿）：POST /kb/articles\n2. 提交审核：POST /kb/articles/{id}/submit-review\n3. 审核通过或驳回：\n   - 如果审核通过：POST /kb/articles/{id}/approve\n   - 如果审核驳回：POST /kb/articles/{id}/reject\n\n以上步骤描述了IT工程师将解决方案录入知识库，并经历审核的完整流程。",
+    "score": 100,
+    "max_score": 100,
+    "score_pct": 100.0,
+    "score_detail": [
+      {
+        "check": "创建接口",
+        "keyword": "POST /kb/articles",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "提交审核",
+        "keyword": "POST /kb/articles/{id}/submit-review",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "审核通过",
+        "keyword": "POST /kb/articles/{id}/approve",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "必填 title/content",
+        "keyword": "title",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      }
+    ],
+    "timestamp": "2026-04-13T14:29:01.445819"
+  },
+  {
+    "id": "IT-API-Attach-01",
+    "module": "附件管理",
+    "difficulty": "⭐",
+    "scenario": "用户提交工单时需要上传一张故障截图作为附件。请描述文件上传的接口（方法、路径、Content-Type），以及上传成功后如何将附件关联到工单。",
+    "response": "### 1. 调用接口（方法 + 完整路径）\n\n**接口方法**：POST\n\n**完整路径**：`/api/v1/attachments`\n\n### 2. 请求参数/请求体\n\n由于接口支持 multipart/form-data 上传，请求体中不包含 JSON 对象，而是直接包含文件数据。以下是请求体的关键字段名和示例值：\n\n- `file`：故障截图文件，类型为 `multipart/form-data`。\n\n**示例请求体**：\n\n```http\nPOST /api/v1/attachments HTTP/1.1\nHost: example.com\nAuthorization: Bearer <JWT_TOKEN>\nContent-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW\n\n------WebKitFormBoundary7MA4YWxkTrZu0gW\nContent-Disposition: form-data; name=\"file\"; filename=\"fault_screenshot.jpg\"\nContent-Type: image/jpeg\n\n<file_content>\n\n------WebKitFormBoundary7MA4YWxkTrZu0gW--\n```\n\n### 3. 响应中的关键字段说明\n\n**成功响应（200）**：\n\n- `code`：业务状态码，6 位数字，例如 `000000` 表示成功。\n- `message`：提示信息（中文），例如 \"上传成功\"。\n- `data`：业务数据对象，包含附件信息。\n  - `id`：附件的唯一标识符。\n  - `fileName`：附件的文件名。\n  - `fileSize`：附件的文件大小（单位：字节）。\n  - `fileType`：附件的文件类型。\n  - `fileExt`：附件的文件扩展名。\n  - `downloadUrl`：附件的下载链接。\n  - `createdAt`：附件创建时间。\n\n### 4. 注意事项\n\n- **权限要求**：需要有效的 JWT Bearer Token 进行鉴权。\n- **参数格式**：文件必须以 `multipart/form-data` 格式上传，且文件大小不超过 20MB。\n- **关联工单**：上传成功后，需要将附件的 `id` 和 `downloadUrl` 存储到工单系统中，以便将附件与工单关联。这通常需要在工单系统中进行数据库操作，将附件的 `id` 作为外键存储在工单记录中，并使用 `downloadUrl` 提供附件下载链接。\n\n### 完整的 API 调用方案\n\n1. **准备 JWT Token**：确保用户已登录并获取了有效的 JWT Bearer Token。\n2. **构建请求体**：将故障截图文件以 `multipart/form-data` 格式构建请求体。\n3. **发送请求**：使用 POST 方法发送请求到 `/api/v1/attachments`，包含 JWT Token 和构建好的请求体。\n4. **处理响应**：检查响应状态码和业务状态码，确认上传成功。从响应中提取附件的 `id` 和 `downloadUrl`。\n5. **关联工单**：将附件的 `id` 和 `downloadUrl` 存储到工单系统中，完成附件与工单的关联。",
+    "score": 80,
+    "max_score": 100,
+    "score_pct": 80.0,
+    "score_detail": [
+      {
+        "check": "上传接口",
+        "keyword": "POST /attachments",
+        "max_score": 30,
+        "score": 30,
+        "hit": true
+      },
+      {
+        "check": "Content-Type multipart/form-data",
+        "keyword": "multipart",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "响应返回 attachmentId/id",
+        "keyword": "id",
+        "max_score": 25,
+        "score": 25,
+        "hit": true
+      },
+      {
+        "check": "工单关联 ciIds/attachmentIds",
+        "keyword": "attachmentIds",
+        "max_score": 20,
+        "score": 0,
+        "hit": false
+      }
+    ],
+    "timestamp": "2026-04-13T14:29:18.137932"
+  }
+]

@@ -1,0 +1,3092 @@
+openapi: 3.0.3
+info:
+  title: 山信软件 ITSM API
+  description: |
+    山信软件 ITSM (IT Service Management) 系统 RESTful API 接口文档。
+    
+    **认证方式说明：**
+    - 内部用户：使用 JWT Bearer Token 认证（`Authorization: Bearer {token}`）
+    - 外部系统：使用 API Key 认证（`X-API-Key: itsm_{env}_{key}`）
+    
+    **设计规范：**
+    - 所有 ID 字段使用字符串类型传输（雪花算法 ID 避免 JS 精度丢失）
+    - 业务错误统一返回 HTTP 200，通过 `code` 字段区分（如 210001 表示用户名密码错误）
+    - 时间格式：ISO 8601（`2026-04-01T10:00:00+08:00`）
+    - ID 传输：字符串形式（如 `"1234567890123456789"`）
+  version: 1.0.0
+  contact:
+    name: 架构师 / 后端负责人
+    email: architect@shanxin.com
+
+servers:
+  - url: http://itsm-dev.shanxin.internal/api/v1
+    description: 内部网络（开发/测试环境）
+  - url: https://itsm.shanxin.com/api/v1
+    description: 生产环境（经 Traefik 路由）
+
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+
+tags:
+  - name: 认证
+    description: 登录、登出、Token 刷新、密码管理
+  - name: 用户与权限
+    description: 用户管理、用户组、角色与权限配置
+  - name: 服务配置
+    description: 服务目录、服务模型、工作流定义
+  - name: 工单核心
+    description: 工单生命周期管理（创建、接单、转单、挂起、关闭等）
+  - name: SLA 管理
+    description: SLA 策略、节假日、统计报表
+  - name: 知识库
+    description: 知识条目、分类、审核流程
+  - name: 运维日历与排班
+    description: 日历事件、值班排班、当日值班查询
+  - name: 消息推送渠道
+    description: 通知渠道配置、测试、开关控制
+  - name: 审计日志
+    description: 操作审计、登录日志查询
+  - name: 附件管理
+    description: 文件上传、下载、删除
+
+paths:
+  # ============== 认证接口 ==============
+  /auth/login:
+    post:
+      tags:
+        - 认证
+      summary: 用户登录
+      description: 用户名密码登录，连续失败 5 次锁定账号
+      operationId: login
+      security: []  # 免鉴权
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功或业务错误（用户名密码错误等）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResponseData'
+
+  /auth/refresh:
+    post:
+      tags:
+        - 认证
+      summary: 刷新 Token
+      description: 使用 Refresh Token 换取新的 Token 对（旋转机制，旧 Refresh Token 立即失效）
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  description: Refresh Token
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          accessToken:
+                            type: string
+                          refreshToken:
+                            type: string
+                          expiresIn:
+                            type: integer
+                            description: Access Token 有效期（秒）
+
+  /auth/logout:
+    post:
+      tags:
+        - 认证
+      summary: 登出
+      description: 服务端将当前 Access Token 加入 Redis 黑名单
+      operationId: logout
+      responses:
+        '200':
+          description: 已登出
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /auth/forgot-password:
+    post:
+      tags:
+        - 认证
+      summary: 忘记密码（发送验证码）
+      description: 向用户邮箱或手机发送验证码
+      operationId: forgotPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - accountNo
+                - channel
+              properties:
+                accountNo:
+                  type: string
+                  description: 账号
+                channel:
+                  type: string
+                  enum: [EMAIL, SMS]
+                  description: 发送渠道
+      responses:
+        '200':
+          description: 验证码已发送
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          resetToken:
+                            type: string
+                            description: 用于后续重置请求的临时 Token
+                          expiresIn:
+                            type: integer
+                            description: 有效期（秒）
+
+  /auth/reset-password:
+    post:
+      tags:
+        - 认证
+      summary: 重置密码
+      description: 使用验证码重置密码
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resetToken
+                - verifyCode
+                - newPassword
+                - confirmPassword
+              properties:
+                resetToken:
+                  type: string
+                verifyCode:
+                  type: string
+                newPassword:
+                  type: string
+                confirmPassword:
+                  type: string
+      responses:
+        '200':
+          description: 密码重置成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /auth/change-password:
+    post:
+      tags:
+        - 认证
+      summary: 修改密码
+      description: 已登录用户修改密码
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - oldPassword
+                - newPassword
+                - confirmPassword
+              properties:
+                oldPassword:
+                  type: string
+                newPassword:
+                  type: string
+                confirmPassword:
+                  type: string
+      responses:
+        '200':
+          description: 密码修改成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # ============== 用户与权限 ==============
+  /users:
+    get:
+      tags:
+        - 用户与权限
+      summary: 获取用户列表
+      description: 支持分页、搜索、部门筛选、状态筛选
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - $ref: '#/components/parameters/KeywordParam'
+        - name: deptId
+          in: query
+          schema:
+            type: string
+          description: 部门 ID 筛选
+        - name: status
+          in: query
+          schema:
+            type: integer
+            enum: [0, 1, 2]
+          description: 状态筛选（0禁用 1启用 2待审核）
+      responses:
+        '200':
+          description: 用户列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PageResponse'
+    post:
+      tags:
+        - 用户与权限
+      summary: 创建用户（管理员直接创建）
+      description: 初始密码由系统生成后通过邮件发送
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserBasicInfo'
+
+  /users/{id}:
+    get:
+      tags:
+        - 用户与权限
+      summary: 获取用户详情
+      operationId: getUserById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 用户详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserDetail'
+    patch:
+      tags:
+        - 用户与权限
+      summary: 更新用户信息
+      description: 所有字段可选，仅传需更新的字段。本人仅可修改邮箱、手机号、头像
+      operationId: updateUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /users/{id}/approve:
+    post:
+      tags:
+        - 用户与权限
+      summary: 审核通过用户注册申请
+      operationId: approveUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 审核通过
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /users/{id}/reject:
+    post:
+      tags:
+        - 用户与权限
+      summary: 驳回用户注册申请
+      operationId: rejectUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: 驳回原因
+      responses:
+        '200':
+          description: 已驳回
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /users/{id}/roles:
+    put:
+      tags:
+        - 用户与权限
+      summary: 分配用户角色
+      operationId: assignUserRoles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - roleIds
+              properties:
+                roleIds:
+                  type: array
+                  items:
+                    type: string
+                  description: 角色 ID 列表
+      responses:
+        '200':
+          description: 分配成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /user-groups:
+    get:
+      tags:
+        - 用户与权限
+      summary: 获取用户组列表
+      operationId: listUserGroups
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 用户组列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PageResponse'
+    post:
+      tags:
+        - 用户与权限
+      summary: 创建用户组
+      operationId: createUserGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - deptId
+              properties:
+                name:
+                  type: string
+                  description: 组名称
+                deptId:
+                  type: string
+                  description: 部门 ID
+                description:
+                  type: string
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /user-groups/{id}/members:
+    put:
+      tags:
+        - 用户与权限
+      summary: 更新用户组成员
+      operationId: updateGroupMembers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - members
+              properties:
+                members:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      roleInGroup:
+                        type: string
+                        enum: [LEADER, MEMBER]
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /roles:
+    get:
+      tags:
+        - 用户与权限
+      summary: 获取角色列表
+      operationId: listRoles
+      responses:
+        '200':
+          description: 角色列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Role'
+
+  /permissions/tree:
+    get:
+      tags:
+        - 用户与权限
+      summary: 获取权限树
+      operationId: getPermissionTree
+      responses:
+        '200':
+          description: 权限树结构
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PermissionNode'
+
+  /roles/{id}/permissions:
+    put:
+      tags:
+        - 用户与权限
+      summary: 更新角色权限
+      operationId: updateRolePermissions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - permissionIds
+              properties:
+                permissionIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # ============== 服务配置 ==============
+  /service-catalogs/tree:
+    get:
+      tags:
+        - 服务配置
+      summary: 获取服务目录树
+      operationId: getServiceCatalogTree
+      responses:
+        '200':
+          description: 服务目录树
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ServiceCatalogNode'
+
+  /service-models:
+    get:
+      tags:
+        - 服务配置
+      summary: 获取服务模型列表
+      operationId: listServiceModels
+      parameters:
+        - name: catalogId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: integer
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 服务模型列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PageResponse'
+    post:
+      tags:
+        - 服务配置
+      summary: 创建服务模型
+      operationId: createServiceModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceModelRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /service-models/{id}/form-fields:
+    get:
+      tags:
+        - 服务配置
+      summary: 获取服务模型表单字段
+      operationId: getServiceModelFormFields
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 表单字段列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/FormField'
+    put:
+      tags:
+        - 服务配置
+      summary: 更新表单字段（批量）
+      operationId: updateServiceModelFormFields
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fields
+              properties:
+                fields:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/FormField'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /workflow-defs:
+    get:
+      tags:
+        - 服务配置
+      summary: 获取工作流列表
+      operationId: listWorkflowDefs
+      responses:
+        '200':
+          description: 工作流列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WorkflowDef'
+
+  /workflow-defs/{id}:
+    get:
+      tags:
+        - 服务配置
+      summary: 获取工作流详情（含状态机配置）
+      operationId: getWorkflowDefById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 工作流详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WorkflowDefDetail'
+
+  # ============== 工单核心 ==============
+  /tickets:
+    get:
+      tags:
+        - 工单核心
+      summary: 查询工单列表
+      description: 数据范围由角色决定
+      operationId: listTickets
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - $ref: '#/components/parameters/KeywordParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: 状态筛选，多个用逗号分隔
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        - name: modelId
+          in: query
+          schema:
+            type: string
+        - name: assignedGroupId
+          in: query
+          schema:
+            type: string
+        - name: assignedUserId
+          in: query
+          schema:
+            type: string
+        - name: createdUserId
+          in: query
+          schema:
+            type: string
+        - name: slaStatus
+          in: query
+          schema:
+            type: string
+            enum: [NORMAL, WARNING, BREACH]
+          description: SLA 状态筛选
+        - name: createdAtStart
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: createdAtEnd
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/OrderByParam'
+        - $ref: '#/components/parameters/OrderDirParam'
+      responses:
+        '200':
+          description: 工单列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PageResponse'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items:
+                                  $ref: '#/components/schemas/TicketListItem'
+    post:
+      tags:
+        - 工单核心
+      summary: 创建工单
+      description: 支持内部用户和外部系统（API Key）创建
+      operationId: createTicket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TicketBasicInfo'
+
+  /tickets/{id}:
+    get:
+      tags:
+        - 工单核心
+      summary: 获取工单详情
+      operationId: getTicketById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 工单详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TicketDetail'
+
+  /tickets/{id}/claim:
+    post:
+      tags:
+        - 工单核心
+      summary: 接单
+      description: 当前用户自动成为处理人，需目标用户组成员权限
+      operationId: claimTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: 接单成功或业务错误（已被他人接单等）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/transfer:
+    post:
+      tags:
+        - 工单核心
+      summary: 转单
+      description: 当前处理人或管理员权限
+      operationId: transferTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - targetGroupId
+              properties:
+                targetGroupId:
+                  type: string
+                  description: 目标用户组 ID
+                targetUserId:
+                  type: string
+                  description: 目标处理人 ID（可选）
+                reason:
+                  type: string
+                  description: 转单原因
+      responses:
+        '200':
+          description: 转单成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/suspend:
+    post:
+      tags:
+        - 工单核心
+      summary: 挂起
+      description: 仅当前处理人可操作
+      operationId: suspendTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: 挂起原因
+                expectedResumeAt:
+                  type: string
+                  format: date-time
+                  description: 预计恢复时间
+      responses:
+        '200':
+          description: 挂起成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/resume:
+    post:
+      tags:
+        - 工单核心
+      summary: 恢复
+      description: 仅当前处理人可操作
+      operationId: resumeTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                remark:
+                  type: string
+      responses:
+        '200':
+          description: 恢复成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/submit-review:
+    post:
+      tags:
+        - 工单核心
+      summary: 提交审核
+      operationId: submitTicketReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resolveDescription
+              properties:
+                resolveDescription:
+                  type: string
+                  description: 解决方案描述
+                knowledgeRefIds:
+                  type: array
+                  items:
+                    type: string
+                  description: 关联知识库条目 ID 列表
+      responses:
+        '200':
+          description: 提交成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/approve:
+    post:
+      tags:
+        - 工单核心
+      summary: 审核通过
+      description: 审核员或管理员权限
+      operationId: approveTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 审核通过
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/reject:
+    post:
+      tags:
+        - 工单核心
+      summary: 审核驳回
+      description: 审核员或管理员权限
+      operationId: rejectTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: 驳回原因
+      responses:
+        '200':
+          description: 已驳回
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/close:
+    post:
+      tags:
+        - 工单核心
+      summary: 关闭工单
+      description: Created 状态需管理员权限，Processing 状态需当前处理人权限
+      operationId: closeTicket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: 关闭原因
+      responses:
+        '200':
+          description: 关闭成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /tickets/{id}/flow-logs:
+    get:
+      tags:
+        - 工单核心
+      summary: 工单流转历史
+      operationId: getTicketFlowLogs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 流转历史列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TicketFlowLog'
+
+  /tickets/{id}/comments:
+    get:
+      tags:
+        - 工单核心
+      summary: 获取评论列表
+      description: isInternal=true 的评论仅运维人员可见
+      operationId: listTicketComments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 评论列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TicketComment'
+    post:
+      tags:
+        - 工单核心
+      summary: 添加评论
+      operationId: addTicketComment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                isInternal:
+                  type: boolean
+                  default: false
+                  description: 是否内部评论（客户不可见）
+                attachmentIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: 添加成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # ============== SLA 管理 ==============
+  /sla-policies:
+    get:
+      tags:
+        - SLA 管理
+      summary: 获取 SLA 策略列表
+      operationId: listSlaPolicies
+      responses:
+        '200':
+          description: SLA 策略列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SlaPolicy'
+    post:
+      tags:
+        - SLA 管理
+      summary: 创建 SLA 策略
+      operationId: createSlaPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlaPolicyRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /holidays:
+    get:
+      tags:
+        - SLA 管理
+      summary: 获取节假日列表
+      operationId: listHolidays
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 节假日列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Holiday'
+
+  /holidays/batch:
+    post:
+      tags:
+        - SLA 管理
+      summary: 批量导入节假日
+      operationId: batchImportHolidays
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - year
+                - holidays
+              properties:
+                year:
+                  type: integer
+                holidays:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Holiday'
+      responses:
+        '200':
+          description: 导入成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /sla/statistics:
+    get:
+      tags:
+        - SLA 管理
+      summary: SLA 统计报表
+      operationId: getSlaStatistics
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: groupId
+          in: query
+          schema:
+            type: string
+        - name: modelId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 统计报表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SlaStatistics'
+
+  # ============== 知识库 ==============
+  /kb/articles:
+    get:
+      tags:
+        - 知识库
+      summary: 获取知识条目列表
+      description: Draft/Rejected 状态仅作者和审核员可见
+      operationId: listKbArticles
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: keyword
+          in: query
+          schema:
+            type: string
+          description: 标题/关键词全文搜索
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, PENDING_REVIEW, APPROVED, REJECTED]
+      responses:
+        '200':
+          description: 知识条目列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PageResponse'
+    post:
+      tags:
+        - 知识库
+      summary: 创建知识条目（草稿）
+      operationId: createKbArticle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KbArticleRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /kb/articles/{id}/submit-review:
+    post:
+      tags:
+        - 知识库
+      summary: 提交审核
+      description: 仅作者本人可操作
+      operationId: submitKbArticleReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 提交成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /kb/articles/{id}/approve:
+    post:
+      tags:
+        - 知识库
+      summary: 审核通过
+      description: 知识库审核员权限，且不能是作者本人
+      operationId: approveKbArticle
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 审核通过
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /kb/articles/{id}/reject:
+    post:
+      tags:
+        - 知识库
+      summary: 审核驳回
+      description: 知识库审核员权限，且不能是作者本人
+      operationId: rejectKbArticle
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comment
+              properties:
+                comment:
+                  type: string
+                  description: 驳回意见
+      responses:
+        '200':
+          description: 已驳回
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /kb/articles/{id}/versions:
+    get:
+      tags:
+        - 知识库
+      summary: 获取版本历史
+      operationId: getKbArticleVersions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 版本历史列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/KbArticleVersion'
+
+  /kb/categories/tree:
+    get:
+      tags:
+        - 知识库
+      summary: 获取分类树
+      operationId: getKbCategoryTree
+      responses:
+        '200':
+          description: 分类树
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/KbCategory'
+
+  /kb/categories:
+    post:
+      tags:
+        - 知识库
+      summary: 创建分类
+      operationId: createKbCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                parentId:
+                  type: string
+                sortOrder:
+                  type: integer
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /kb/categories/{id}:
+    patch:
+      tags:
+        - 知识库
+      summary: 更新分类
+      operationId: updateKbCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                sortOrder:
+                  type: integer
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+    delete:
+      tags:
+        - 知识库
+      summary: 删除分类
+      description: 需无关联条目
+      operationId: deleteKbCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # ============== 运维日历与排班 ==============
+  /calendar/events:
+    get:
+      tags:
+        - 运维日历与排班
+      summary: 获取日历事件列表
+      operationId: listCalendarEvents
+      parameters:
+        - name: startTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: eventType
+          in: query
+          schema:
+            type: string
+        - name: groupId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 事件列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CalendarEvent'
+    post:
+      tags:
+        - 运维日历与排班
+      summary: 创建日历事件
+      operationId: createCalendarEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalendarEventRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /roster/schedules:
+    get:
+      tags:
+        - 运维日历与排班
+      summary: 获取排班列表
+      operationId: listRosterSchedules
+      parameters:
+        - name: teamId
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 排班列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PageResponse'
+
+  /roster/schedules/generate:
+    post:
+      tags:
+        - 运维日历与排班
+      summary: 批量生成排班
+      operationId: generateRosterSchedules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - teamId
+                - startDate
+                - endDate
+                - shiftType
+              properties:
+                teamId:
+                  type: string
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                shiftType:
+                  type: string
+                  enum: [DAY, NIGHT]
+                startTime:
+                  type: string
+                  pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
+                endTime:
+                  type: string
+                  pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$'
+                rotationDays:
+                  type: integer
+                  description: 轮班天数
+      responses:
+        '200':
+          description: 生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /roster/on-duty:
+    get:
+      tags:
+        - 运维日历与排班
+      summary: 查询当日值班人
+      operationId: getOnDutyUser
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: 日期，默认为今天
+        - name: groupId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 用户组 ID
+      responses:
+        '200':
+          description: 当日值班信息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/OnDutyInfo'
+
+  # ============== 消息推送渠道 ==============
+  /notify/channels:
+    get:
+      tags:
+        - 消息推送渠道
+      summary: 获取渠道配置列表
+      operationId: listNotifyChannels
+      responses:
+        '200':
+          description: 渠道列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/NotifyChannel'
+
+  /notify/channels/{id}:
+    patch:
+      tags:
+        - 消息推送渠道
+      summary: 更新渠道配置
+      operationId: updateNotifyChannel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                configJson:
+                  type: object
+                  description: 渠道配置（敏感字段脱敏返回）
+                rateLimitCount:
+                  type: integer
+                dailyQuota:
+                  type: integer
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /notify/channels/{id}/enable:
+    post:
+      tags:
+        - 消息推送渠道
+      summary: 启用渠道
+      description: 操作强制写入审计日志
+      operationId: enableNotifyChannel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 已启用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /notify/channels/{id}/disable:
+    post:
+      tags:
+        - 消息推送渠道
+      summary: 禁用渠道（强管控开关）
+      description: 操作强制写入审计日志，返回待发消息数量
+      operationId: disableNotifyChannel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 已禁用
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          channelType:
+                            type: string
+                          previousStatus:
+                            type: integer
+                          currentStatus:
+                            type: integer
+                          pendingMessageCount:
+                            type: integer
+                          message:
+                            type: string
+
+  /notify/channels/{id}/test:
+    post:
+      tags:
+        - 消息推送渠道
+      summary: 测试渠道连通性
+      operationId: testNotifyChannel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - recipient
+              properties:
+                recipient:
+                  type: string
+                  description: 测试接收地址（邮箱/手机号等）
+      responses:
+        '200':
+          description: 测试结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          success:
+                            type: boolean
+                          latencyMs:
+                            type: integer
+                          message:
+                            type: string
+
+  # ============== 审计日志 ==============
+  /audit-logs:
+    get:
+      tags:
+        - 审计日志
+      summary: 查询审计日志
+      operationId: listAuditLogs
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: string
+        - name: accountNo
+          in: query
+          schema:
+            type: string
+        - name: module
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: resourceType
+          in: query
+          schema:
+            type: string
+        - name: resourceId
+          in: query
+          schema:
+            type: string
+        - name: result
+          in: query
+          schema:
+            type: string
+            enum: [SUCCESS, FAIL]
+        - name: loginIp
+          in: query
+          schema:
+            type: string
+        - name: startTime
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 审计日志列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PageResponse'
+                          - type: object
+                            properties:
+                              list:
+                                type: array
+                                items:
+                                  $ref: '#/components/schemas/AuditLog'
+
+  /audit-logs/login:
+    get:
+      tags:
+        - 审计日志
+      summary: 查询登录日志
+      operationId: listLoginLogs
+      parameters:
+        - name: accountNo
+          in: query
+          schema:
+            type: string
+        - name: loginIp
+          in: query
+          schema:
+            type: string
+        - name: result
+          in: query
+          schema:
+            type: string
+            enum: [SUCCESS, FAIL]
+        - name: startTime
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: 登录日志列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PageResponse'
+
+  # ============== 附件管理 ==============
+  /attachments:
+    post:
+      tags:
+        - 附件管理
+      summary: 上传附件
+      description: 支持 multipart/form-data 上传，最大 20MB
+      operationId: uploadAttachment
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 上传文件（最大 20MB）
+                refType:
+                  type: string
+                  enum: [TICKET, KB_ARTICLE, COMMENT]
+                  description: 关联类型
+                refId:
+                  type: string
+                  description: 关联业务 ID（可选，上传后再关联）
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Attachment'
+
+  /attachments/{id}/download:
+    get:
+      tags:
+        - 附件管理
+      summary: 下载附件
+      description: 直接返回文件流，校验与关联业务的数据权限
+      operationId: downloadAttachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 文件流
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+
+  /attachments/{id}:
+    delete:
+      tags:
+        - 附件管理
+      summary: 删除附件
+      description: 逻辑删除，实体文件由定时任务清理。仅上传人本人或管理员可操作
+      operationId: deleteAttachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  # ============== 健康检查 ==============
+  /health:
+    get:
+      tags:
+        - 系统
+      summary: 健康检查
+      description: 运维用，免鉴权
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer Token（内部用户）
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API Key 认证（外部系统），格式 `itsm_{env}_{32位随机字符串}`
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+      description: 页码，从 1 开始
+    PageSizeParam:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+      description: 每页条数，最大 100
+    KeywordParam:
+      name: keyword
+      in: query
+      schema:
+        type: string
+      description: 搜索关键词
+    OrderByParam:
+      name: orderBy
+      in: query
+      schema:
+        type: string
+        default: createdAt
+      description: 排序字段
+    OrderDirParam:
+      name: orderDir
+      in: query
+      schema:
+        type: string
+        default: desc
+        enum: [asc, desc]
+      description: 排序方向
+
+  schemas:
+    # 基础结构
+    ApiResponse:
+      type: object
+      required:
+        - code
+        - message
+        - data
+        - traceId
+      properties:
+        code:
+          type: integer
+          description: 业务状态码，6 位数字
+          example: 200000
+        message:
+          type: string
+          description: 提示信息（中文）
+          example: 成功
+        data:
+          type: object
+          description: 业务数据，失败时为 null
+        traceId:
+          type: string
+          description: 链路追踪 ID
+          example: abc123def456
+
+    PageRequest:
+      type: object
+      properties:
+        page:
+          type: integer
+          default: 1
+        pageSize:
+          type: integer
+          default: 20
+          maximum: 100
+        orderBy:
+          type: string
+          default: createdAt
+        orderDir:
+          type: string
+          enum: [asc, desc]
+          default: desc
+
+    PageResponse:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+          description: 总记录数
+        page:
+          type: integer
+          description: 当前页码
+        pageSize:
+          type: integer
+          description: 每页条数
+        totalPages:
+          type: integer
+          description: 总页数
+
+    # 认证相关
+    LoginRequest:
+      type: object
+      required:
+        - accountNo
+        - password
+      properties:
+        accountNo:
+          type: string
+          example: admin001
+        password:
+          type: string
+          format: password
+        captchaToken:
+          type: string
+          description: 可选验证码 Token
+
+    LoginResponseData:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Access Token 有效期（秒），默认 7200
+        userInfo:
+          $ref: '#/components/schemas/UserBasicInfo'
+
+    UserBasicInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 用户 ID（字符串形式）
+        accountNo:
+          type: string
+        employeeName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        deptId:
+          type: string
+        deptName:
+          type: string
+
+    UserDetail:
+      allOf:
+        - $ref: '#/components/schemas/UserBasicInfo'
+        - type: object
+          properties:
+            status:
+              type: integer
+              enum: [0, 1, 2]
+              description: 0禁用 1启用 2待审核
+            lastLoginAt:
+              type: string
+              format: date-time
+            createdAt:
+              type: string
+              format: date-time
+
+    CreateUserRequest:
+      type: object
+      required:
+        - accountNo
+        - employeeName
+        - email
+        - phone
+        - deptId
+      properties:
+        accountNo:
+          type: string
+        employeeName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        deptId:
+          type: string
+        roleIds:
+          type: array
+          items:
+            type: string
+        groupIds:
+          type: array
+          items:
+            type: string
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        employeeName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        deptId:
+          type: string
+        status:
+          type: integer
+          enum: [0, 1, 2]
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+
+    PermissionNode:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [MENU, BUTTON]
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionNode'
+
+    # 服务配置
+    ServiceCatalogNode:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceCatalogNode'
+
+    ServiceModelRequest:
+      type: object
+      required:
+        - catalogId
+        - name
+        - code
+      properties:
+        catalogId:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        workflowDefId:
+          type: string
+        slaPolicyId:
+          type: string
+        defaultGroupId:
+          type: string
+
+    FormField:
+      type: object
+      properties:
+        id:
+          type: string
+        fieldKey:
+          type: string
+        fieldType:
+          type: string
+          enum: [TEXT, TEXTAREA, SELECT, CI_REF, DATE, DATETIME, NUMBER]
+        label:
+          type: string
+        required:
+          type: boolean
+        placeholder:
+          type: string
+        sortOrder:
+          type: integer
+
+    WorkflowDef:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        version:
+          type: integer
+
+    WorkflowDefDetail:
+      allOf:
+        - $ref: '#/components/schemas/WorkflowDef'
+        - type: object
+          properties:
+            states:
+              type: array
+              items:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  label:
+                    type: string
+                  isInitial:
+                    type: boolean
+            transitions:
+              type: array
+              items:
+                type: object
+                properties:
+                  from:
+                    type: string
+                  to:
+                    type: string
+                  action:
+                    type: string
+                  actor:
+                    type: string
+                  description:
+                    type: string
+            allowCloseStates:
+              type: array
+              items:
+                type: string
+
+    # 工单相关
+    CreateTicketRequest:
+      type: object
+      required:
+        - modelId
+        - title
+        - priority
+      properties:
+        modelId:
+          type: string
+          description: 服务模型 ID
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        formData:
+          type: object
+          description: 动态表单数据，键值对形式
+        ciIds:
+          type: array
+          items:
+            type: string
+          description: 关联配置项 ID 列表
+        source:
+          type: string
+          description: API Key 创建时可选，默认为 API
+
+    TicketBasicInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        ticketNo:
+          type: string
+          example: TK-2026-000123
+        status:
+          type: string
+        title:
+          type: string
+        priority:
+          type: string
+        assignedGroupId:
+          type: string
+        assignedGroupName:
+          type: string
+        slaDeadlineResponse:
+          type: string
+          format: date-time
+        slaDeadlineResolve:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    TicketListItem:
+      type: object
+      properties:
+        id:
+          type: string
+        ticketNo:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        priority:
+          type: string
+        modelName:
+          type: string
+        createdUserName:
+          type: string
+        assignedGroupName:
+          type: string
+        assignedUserName:
+          type: string
+        slaDeadlineResolve:
+          type: string
+          format: date-time
+        slaResolveStatus:
+          type: string
+          enum: [NORMAL, WARNING, BREACH]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TicketDetail:
+      allOf:
+        - $ref: '#/components/schemas/TicketBasicInfo'
+        - type: object
+          properties:
+            modelId:
+              type: string
+            modelName:
+              type: string
+            description:
+              type: string
+            source:
+              type: string
+            formData:
+              type: object
+            createdUser:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                deptName:
+                  type: string
+            assignedGroup:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            assignedUser:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            sla:
+              type: object
+              properties:
+                policyName:
+                  type: string
+                deadlineResponse:
+                  type: string
+                  format: date-time
+                deadlineResolve:
+                  type: string
+                  format: date-time
+                actualResponseAt:
+                  type: string
+                  format: date-time
+                responseStatus:
+                  type: string
+                resolveStatus:
+                  type: string
+            ciList:
+              type: array
+              items:
+                type: object
+                properties:
+                  ciId:
+                    type: string
+                  ciType:
+                    type: string
+                  ciName:
+                    type: string
+                  relationType:
+                    type: string
+
+    TicketFlowLog:
+      type: object
+      properties:
+        id:
+          type: string
+        fromStatus:
+          type: string
+          nullable: true
+        toStatus:
+          type: string
+        action:
+          type: string
+        actorType:
+          type: string
+          enum: [USER, SYSTEM]
+        operatorId:
+          type: string
+        operatorName:
+          type: string
+        remark:
+          type: string
+        operatedAt:
+          type: string
+          format: date-time
+
+    TicketComment:
+      type: object
+      properties:
+        id:
+          type: string
+        content:
+          type: string
+        isInternal:
+          type: boolean
+        creatorName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+
+    # SLA 相关
+    SlaPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        serviceTimeType:
+          type: string
+          enum: [5x8, 7x24]
+        responseMedium:
+          type: integer
+          description: 响应时间（分钟）
+        responseHigh:
+          type: integer
+        responseCritical:
+          type: integer
+        resolveLow:
+          type: integer
+        resolveMedium:
+          type: integer
+        resolveHigh:
+          type: integer
+        resolveCritical:
+          type: integer
+
+    SlaPolicyRequest:
+      type: object
+      required:
+        - name
+        - serviceTimeType
+      properties:
+        name:
+          type: string
+        serviceTimeType:
+          type: string
+        serviceTimeJson:
+          type: object
+          nullable: true
+        responseMedium:
+          type: integer
+        responseHigh:
+          type: integer
+        responseCritical:
+          type: integer
+        resolveLow:
+          type: integer
+        resolveMedium:
+          type: integer
+        resolveHigh:
+          type: integer
+        resolveCritical:
+          type: integer
+        createdWarnMinutes:
+          type: integer
+        createdEscalateMinutes:
+          type: integer
+        warnThresholdPct:
+          type: integer
+
+    Holiday:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        name:
+          type: string
+        isWorkday:
+          type: boolean
+          description: 是否调休工作日
+
+    SlaStatistics:
+      type: object
+      properties:
+        totalTickets:
+          type: integer
+        responseAchieveRate:
+          type: number
+          format: float
+          description: 响应达成率（0-1）
+        resolveAchieveRate:
+          type: number
+          format: float
+        avgResponseMinutes:
+          type: integer
+        avgResolveMinutes:
+          type: integer
+        breachCount:
+          type: integer
+        byPriority:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              total:
+                type: integer
+              breachCount:
+                type: integer
+
+    # 知识库
+    KbArticleRequest:
+      type: object
+      required:
+        - categoryId
+        - title
+        - content
+      properties:
+        categoryId:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        keywords:
+          type: string
+        content:
+          type: string
+          description: HTML 富文本内容
+        probeRefId:
+          type: string
+        attachmentIds:
+          type: array
+          items:
+            type: string
+
+    KbArticleVersion:
+      type: object
+      properties:
+        version:
+          type: integer
+        content:
+          type: string
+        updatedBy:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    KbCategory:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        parentId:
+          type: string
+        sortOrder:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/KbCategory'
+
+    # 日历排班
+    CalendarEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        eventType:
+          type: string
+          enum: [CHANGE_WINDOW, MAINTENANCE, MEETING]
+        description:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        allDay:
+          type: boolean
+        relatedGroupId:
+          type: string
+        color:
+          type: string
+          description: 日历显示颜色（如 #FF6B35）
+
+    CalendarEventRequest:
+      type: object
+      required:
+        - title
+        - eventType
+        - startTime
+        - endTime
+      properties:
+        title:
+          type: string
+        eventType:
+          type: string
+        description:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        allDay:
+          type: boolean
+          default: false
+        relatedGroupId:
+          type: string
+        color:
+          type: string
+
+    OnDutyInfo:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        groupId:
+          type: string
+        onDutyUser:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            phone:
+              type: string
+            email:
+              type: string
+
+    # 消息渠道
+    NotifyChannel:
+      type: object
+      properties:
+        id:
+          type: string
+        channelType:
+          type: string
+          enum: [EMAIL, SMS, LARK, WECHAT, DINGTALK]
+        name:
+          type: string
+        isEnabled:
+          type: integer
+          enum: [0, 1]
+        lastTestAt:
+          type: string
+          format: date-time
+        lastTestResult:
+          type: string
+          enum: [SUCCESS, FAIL]
+        lastTestError:
+          type: string
+        rateLimitCount:
+          type: integer
+        dailyQuota:
+          type: integer
+          nullable: true
+        dailySentCount:
+          type: integer
+
+    # 审计日志
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+        accountNo:
+          type: string
+        employeeName:
+          type: string
+        loginIp:
+          type: string
+        userAgent:
+          type: string
+        module:
+          type: string
+        action:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        beforeJson:
+          type: object
+        afterJson:
+          type: object
+        result:
+          type: string
+          enum: [SUCCESS, FAIL]
+        operatedAt:
+          type: string
+          format: date-time
+
+    # 附件
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        fileType:
+          type: string
+        fileExt:
+          type: string
+        downloadUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
