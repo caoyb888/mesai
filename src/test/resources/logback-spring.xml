@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    测试环境 logback 配置（覆盖 src/main/resources/logback-spring.xml）
+    仅输出到控制台，避免因 /var/log/mesai/ 不存在导致 Context 加载失败
+-->
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+    <logger name="com.xingtong.mesai" level="INFO"/>
+</configuration>
