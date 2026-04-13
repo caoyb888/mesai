@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+    SysUserMapper.xml - 系统用户 Mapper XML
+    用途：用户分页列表查询（不含 password 字段，安全输出）
+    模块：系统管理模块
+    作者：AI（芯智云匠）
+    日期：2026-04-13
+    关联需求：REQ-MES-AI-20260412-005（S2-3 T2-3-6）
+-->
+<mapper namespace="com.xingtong.mesai.module.system.mapper.SysUserMapper">
+
+    <!-- 用户 VO 结果集映射（明确列出字段，禁止 SELECT *，禁止 password 字段） -->
+    <resultMap id="UserVOMap" type="com.xingtong.mesai.module.system.vo.UserVO">
+        <id     column="id"         property="userId"    />
+        <result column="username"   property="username"  />
+        <result column="real_name"  property="realName"  />
+        <result column="role"       property="role"      />
+        <result column="dept"       property="dept"      />
+        <result column="email"      property="email"     />
+        <result column="is_active"  property="isActive"  />
+        <result column="created_at" property="createdAt" />
+    </resultMap>
+
+    <!--
+        selectUserPage：分页查询用户列表
+        参数说明：
+          role     - 角色代码精确匹配，null 时忽略
+          dept     - 部门名称模糊匹配，null 时忽略
+          isActive - 启用状态精确匹配，null 时忽略
+          keyword  - username 或 realName 模糊匹配，null 时忽略
+        注意：禁止字符串拼接 SQL，所有条件均使用 #{} 参数化
+    -->
+    <select id="selectUserPage" resultMap="UserVOMap">
+        SELECT
+            id,
+            username,
+            real_name,
+            role,
+            dept,
+            email,
+            is_active,
+            created_at
+        FROM sys_user
+        WHERE is_deleted = 0
+        <if test="role != null and role != ''">
+            AND role = #{role}
+        </if>
+        <if test="dept != null and dept != ''">
+            AND dept LIKE CONCAT('%', #{dept}, '%')
+        </if>
+        <if test="isActive != null">
+            AND is_active = #{isActive}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                username  LIKE CONCAT('%', #{keyword}, '%')
+                OR real_name LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        ORDER BY created_at DESC
+    </select>
+
+</mapper>
