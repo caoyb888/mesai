@@ -41,7 +41,8 @@ itsm:
     username: ${ITSM_DB_USERNAME:}
     password: ${ITSM_DB_PASSWORD:}
     # 驱动类：MySQL 用 com.mysql.cj.jdbc.Driver，PostgreSQL 用 org.postgresql.Driver
-    driver-class-name: ${ITSM_DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    # ITSM 测试库为 PostgreSQL 15.x；若连接 MySQL 则改为 com.mysql.cj.jdbc.Driver
+    driver-class-name: ${ITSM_DB_DRIVER:org.postgresql.Driver}
     hikari:
       pool-name: HikariPool-ITSM-Demo
       maximum-pool-size: 5

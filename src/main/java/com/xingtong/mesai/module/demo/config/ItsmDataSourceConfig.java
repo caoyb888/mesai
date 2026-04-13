@@ -3,12 +3,10 @@ package com.xingtong.mesai.module.demo.config;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.util.StringUtils;
-
 import javax.sql.DataSource;
 
 /**
@@ -35,21 +33,20 @@ public class ItsmDataSourceConfig {
     @Value("${itsm.datasource.password:}")
     private String password;
 
-    @Value("${itsm.datasource.driver-class-name:com.mysql.cj.jdbc.Driver}")
+    @Value("${itsm.datasource.driver-class-name:org.postgresql.Driver}")
     private String driverClassName;
 
     /**
      * ITSM 测试数据源 Bean
      *
-     * <p>当 ITSM_DB_URL 已配置时创建真实连接池；
+     * <p>当 ITSM_DB_URL 已配置且非空时创建真实连接池；
      * 未配置时不创建（演示接口将返回"未配置数据源"提示）。
+     * 使用 ConditionalOnExpression 明确过滤空字符串，避免 ConditionalOnProperty
+     * 将空值视为"属性存在"而错误激活 Bean 的歧义行为。
      */
     @Bean("itsmDataSource")
-    @ConditionalOnProperty(name = "itsm.datasource.url", matchIfMissing = false)
+    @ConditionalOnExpression("!'${itsm.datasource.url:}'.isEmpty()")
     public DataSource itsmDataSource() {
-        if (!StringUtils.hasText(url)) {
-            return null;
-        }
         HikariDataSource ds = new HikariDataSource();
         ds.setJdbcUrl(url);
         ds.setUsername(username);
@@ -67,7 +64,7 @@ public class ItsmDataSourceConfig {
      * ITSM JdbcTemplate Bean（依赖 itsmDataSource）
      */
     @Bean("itsmJdbcTemplate")
-    @ConditionalOnProperty(name = "itsm.datasource.url", matchIfMissing = false)
+    @ConditionalOnExpression("!'${itsm.datasource.url:}'.isEmpty()")
     public JdbcTemplate itsmJdbcTemplate() {
         return new JdbcTemplate(itsmDataSource());
     }
