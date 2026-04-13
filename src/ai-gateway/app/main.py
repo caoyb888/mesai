@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.routers import gateway
+from app.routers import gateway, demo
 
 # ── 日志配置 ─────────────────────────────────────────────────
 settings = get_settings()
@@ -81,6 +81,7 @@ app = FastAPI(
 )
 
 app.include_router(gateway.router)
+app.include_router(demo.router)
 
 
 # ── 全局异常处理 ──────────────────────────────────────────────

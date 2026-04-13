@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     gateway_workers: int = 2
     log_level: str = "INFO"
 
+    # ── ChromaDB（RAG 知识库，演示接口使用）────────────────────
+    chroma_persist_dir: str = "./data/chromadb"   # 通过 CHROMA_PERSIST_DIR 注入
+    rag_top_n: int = 5                             # RAG 检索条数，降级时自动缩减至 3
+
     # ── 企业微信告警 Webhook ──────────────────────────────────
     wechat_webhook_url: str = ""   # 告警通知，通过 WECHAT_WEBHOOK_URL 注入
 

@@ -53,3 +53,58 @@ class BudgetStatus(BaseModel):
     usage_rate: float
     is_degraded: bool = Field(..., description="是否已触发降级（RAG Top-5 → Top-3）")
     is_paused: bool = Field(..., description="是否已暂停非紧急任务")
+
+
+# ── 演示接口（Demo）模型 ─────────────────────────────────────────
+
+class DemoQueryMode(str):
+    """演示查询模式枚举"""
+    SQL = "sql"           # 生成 SELECT 查询 SQL
+    DML = "dml"           # 生成 INSERT/UPDATE/DELETE SQL
+    FE_COMPONENT = "fe_component"  # 生成 Vue 3 前端组件代码
+
+
+class DemoRequest(BaseModel):
+    """ITSM 演示查询请求"""
+    question: str = Field(..., min_length=5, max_length=500, description="自然语言需求描述")
+    mode: str = Field(
+        "sql",
+        description="生成模式：sql（查询SQL）/ dml（变更SQL）/ fe_component（Vue组件）",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "question": "查询过去7天内所有状态为OPEN的工单，按创建时间倒序排列，只取前20条",
+                    "mode": "sql",
+                },
+                {
+                    "question": "将编号为TKT-2026-001的工单状态更新为CLOSED，同时记录关闭时间",
+                    "mode": "dml",
+                },
+                {
+                    "question": "生成一个ITSM工单列表页组件，包含工单编号、标题、状态、创建时间列，支持按状态筛选",
+                    "mode": "fe_component",
+                },
+            ]
+        }
+
+
+class ContextDoc(BaseModel):
+    """RAG 检索到的上下文文档片段"""
+    source: str
+    doc_type: str
+    content_preview: str = Field(..., description="内容摘要（前200字符）")
+    relevance_score: float = Field(..., description="相关度得分（1 - distance）")
+
+
+class DemoResponse(BaseModel):
+    """ITSM 演示查询响应"""
+    mode: str
+    question: str
+    generated_code: str = Field(..., description="AI 生成的 SQL 或 Vue 组件代码")
+    explanation: str = Field(..., description="AI 对生成代码的说明")
+    context_docs: list[ContextDoc] = Field(default_factory=list, description="使用的知识库上下文片段")
+    tokens_used: int
+    response_time_ms: int

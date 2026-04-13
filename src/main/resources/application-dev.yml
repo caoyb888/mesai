@@ -34,6 +34,22 @@ spring:
         min-idle: 0
         max-wait: -1ms
 
+# ── ITSM 测试数据源（演示接口直连，通过环境变量注入，禁止硬编码）──
+itsm:
+  datasource:
+    url: ${ITSM_DB_URL:}
+    username: ${ITSM_DB_USERNAME:}
+    password: ${ITSM_DB_PASSWORD:}
+    # 驱动类：MySQL 用 com.mysql.cj.jdbc.Driver，PostgreSQL 用 org.postgresql.Driver
+    driver-class-name: ${ITSM_DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    hikari:
+      pool-name: HikariPool-ITSM-Demo
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000
+      # 只读连接池，禁止写提交（演示模式下DML使用手动事务+回滚）
+      read-only: false
+
 # ── 开发环境：开启 MyBatis SQL 调试日志 ──────────────────────────
 mybatis-plus:
   configuration:
