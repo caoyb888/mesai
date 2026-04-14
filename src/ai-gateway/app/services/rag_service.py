@@ -42,9 +42,15 @@ class RagService:
         settings = get_settings()
         try:
             self._client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
+            # 使用多语言模型，与入库时保持一致（paraphrase-multilingual-MiniLM-L12-v2）
+            from sentence_transformers import SentenceTransformer
+            self._embed_model = SentenceTransformer(
+                "paraphrase-multilingual-MiniLM-L12-v2"
+            )
             log.info("ChromaDB 已连接：%s", settings.chroma_persist_dir)
+            log.info("Embedding 模型：paraphrase-multilingual-MiniLM-L12-v2")
         except Exception as e:
-            log.error("ChromaDB 连接失败：%s", e)
+            log.error("ChromaDB/Embedding 初始化失败：%s", e)
             raise
 
     def retrieve(
@@ -71,8 +77,10 @@ class RagService:
             return []
 
         try:
+            # 用多语言模型生成查询向量，与入库时保持一致
+            query_vector = self._embed_model.encode([query])[0].tolist()
             results = col.query(
-                query_texts=[query],
+                query_embeddings=[query_vector],
                 n_results=min(n, col.count()),
                 include=["documents", "metadatas", "distances"],
             )

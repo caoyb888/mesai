@@ -1,6 +1,6 @@
 ## 表：itsm_holiday（节假日日历表，SLA时间计算时排除休息日，支持调休工作日设置）
 
-**模块**：SLA引擎  |  **Schema**：itsm  |  **来源文件**：04_SLA 引擎.sql
+**模块**：SLA引擎  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：04_SLA 引擎.sql
 
 ### 字段明细
 

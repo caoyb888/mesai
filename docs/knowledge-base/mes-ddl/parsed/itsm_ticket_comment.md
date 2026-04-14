@@ -1,6 +1,6 @@
 ## 表：itsm_ticket_comment（工单评论表，支持提单人与处理人沟通，支持内部备注）
 
-**模块**：工单核心  |  **Schema**：itsm  |  **来源文件**：03_工单核心.sql
+**模块**：工单核心  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：03_工单核心.sql
 
 ### 字段明细
 

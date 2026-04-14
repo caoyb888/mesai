@@ -195,26 +195,28 @@ class ChunkSplitter:
 
 class LocalEmbedder:
     """
-    使用 ChromaDB 内置的 DefaultEmbeddingFunction 生成本地向量。
+    使用多语言 SentenceTransformer 模型生成本地向量。
 
-    底层模型：all-MiniLM-L6-v2（首次运行自动下载 ~80MB）
-    优点：无需外部 API Key，适合本地验证和离线环境。
-    缺点：中文语义效果弱于专用中文模型，生产环境建议换 Kimi/OpenAI。
+    底层模型：paraphrase-multilingual-MiniLM-L12-v2（支持中英文，~480MB）
+    优点：无需外部 API Key，中文语义效果良好。
+    注意：首次运行自动下载模型文件。
     """
+
+    MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
     def __init__(self):
         try:
-            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-            self._ef = DefaultEmbeddingFunction()
-            log.info("本地 Embedding 初始化完成（all-MiniLM-L6-v2）")
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self.MODEL_NAME)
+            log.info("本地 Embedding 初始化完成（%s）", self.MODEL_NAME)
         except Exception as e:
             log.error("本地 Embedding 初始化失败：%s", e)
             raise
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """批量生成向量"""
-        result = self._ef(texts)
-        return list(result)
+        vectors = self._model.encode(texts, show_progress_bar=False)
+        return [v.tolist() for v in vectors]
 
 
 # ── Kimi Embedding ────────────────────────────────────────────

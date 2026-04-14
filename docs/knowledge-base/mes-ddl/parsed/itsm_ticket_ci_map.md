@@ -1,6 +1,6 @@
 ## 表：itsm_ticket_ci_map（工单与CMDB配置项关联表，支持多对多，记录故障影响范围）
 
-**模块**：工单核心  |  **Schema**：itsm  |  **来源文件**：03_工单核心.sql
+**模块**：工单核心  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：03_工单核心.sql
 
 ### 字段明细
 

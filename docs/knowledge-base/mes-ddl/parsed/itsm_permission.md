@@ -1,6 +1,6 @@
 ## 表：itsm_permission（权限资源表，存储菜单、按钮、API接口级权限定义）
 
-**模块**：用户与权限  |  **Schema**：itsm  |  **来源文件**：01_用户与权限.sql
+**模块**：用户与权限  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：01_用户与权限.sql
 
 ### 字段明细
 

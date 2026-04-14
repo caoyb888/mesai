@@ -1,6 +1,6 @@
 ## 表：itsm_sla_policy（SLA策略表，按优先级分别定义响应和解决时限，支持不同服务时间窗口）
 
-**模块**：SLA引擎  |  **Schema**：itsm  |  **来源文件**：04_SLA 引擎.sql
+**模块**：SLA引擎  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：04_SLA 引擎.sql
 
 ### 字段明细
 

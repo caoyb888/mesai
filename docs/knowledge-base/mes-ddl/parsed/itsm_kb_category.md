@@ -1,6 +1,6 @@
 ## 表：itsm_kb_category（知识库分类表，支持多级分类树）
 
-**模块**：知识库  |  **Schema**：itsm  |  **来源文件**：05_知识库.sql
+**模块**：知识库  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：05_知识库.sql
 
 ### 字段明细
 

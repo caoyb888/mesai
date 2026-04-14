@@ -1,6 +1,6 @@
 ## 表：itsm_service_catalog（服务目录表，支持多级分类树，如IT服务->账号权限->邮箱开通）
 
-**模块**：服务配置引擎  |  **Schema**：itsm  |  **来源文件**：02_服务配置引擎.sql
+**模块**：服务配置引擎  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：02_服务配置引擎.sql
 
 ### 字段明细
 

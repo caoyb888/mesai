@@ -477,6 +477,120 @@
 
 ---
 
+## 十四、知识库入库规范（V1.1 补充）
+
+> 本章源于 2026-04-14 ITSM 知识库入库故障复盘，记录已验证的错误根因与强制规范，
+> 所有后续入库操作必须遵守。
+
+### 14.1 已知故障根因
+
+#### 故障一：Schema 标注误导 LLM 生成错误表名前缀
+
+**现象**：LLM 生成 `itsm.itsm_ticket_flow_log`，实际执行报 `relation "itsm.itsm_ticket_flow_log" does not exist`。
+
+**根因**：解析后的 Markdown 表卡片（`parsed/*.md`）头部写有：
+```
+**模块**：工单核心  |  **Schema**：itsm  |  ...
+```
+LLM 将 `Schema：itsm` 识别为 PostgreSQL schema 前缀，在 SQL 中自动加上 `itsm.` 修饰符。
+实际上该字段是**逻辑应用分组名**，所有表均在 PostgreSQL 的 `public` schema 下。
+
+**修复**：将全部 `**Schema**：itsm` 替换为：
+```
+**PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）
+```
+
+---
+
+#### 故障二：Embedding 模型为纯英文模型，中文检索质量严重下降
+
+**现象**：检索「查询工单流转信息」时，`itsm_ticket_flow_log` 未进入 Top-5，LLM 凭内部记忆猜测，生成不存在的表名 `itsm_ticket_flow`。
+
+**根因**：`kb_ingest.py` 的 `--embed-mode local` 默认使用 ChromaDB 内置的 `all-MiniLM-L6-v2`，该模型为**纯英文训练**，中文 token 的语义空间质量差，导致中文查询与中文文档之间的向量距离偏高、排序混乱。
+
+**修复**：将本地 Embedding 模型统一替换为 `paraphrase-multilingual-MiniLM-L12-v2`（支持 50+ 语言，含中文）。
+
+---
+
+#### 故障三：入库与查询使用不同 Embedding 模型，向量空间不一致
+
+**现象**：重新入库后，相同查询的检索结果排序与预期相差甚远，原本 Top-3 的文档消失。
+
+**根因**：`kb_ingest.py` 入库时使用模型 A 生成文档向量；`rag_service.py` 查询时使用 ChromaDB 默认 EF（模型 B）生成查询向量。两者向量空间不同，余弦相似度计算结果无意义。
+
+**修复**：`rag_service.py` 改为显式使用与入库相同的模型生成 `query_embeddings`，禁止依赖 ChromaDB 隐式 EF。
+
+---
+
+#### 故障四：Kimi Embedding API 未验证可用性即写入规范
+
+**现象**：`kb_ingest.py` 默认 `--embed-mode api` 调用 Kimi Embedding 接口，实际返回 `403 permission_denied`（该接口未对外开放）。
+
+**根因**：入库脚本编写时未验证 `moonshot-v1-embedding` 接口实际可用性，仅参考文档默认配置。
+
+---
+
+### 14.2 强制规范（入库前必须逐项检查）
+
+```
+□ 1. parsed/*.md 文件头部 Schema 字段
+      必须写明真实 PostgreSQL Schema 及使用说明，格式：
+      **PostgreSQL Schema**：<schema名>（SQL中直接写表名，禁止添加任何schema前缀）
+      禁止只写逻辑模块分组名（如 itsm、mes）而不加说明
+
+□ 2. Embedding 模型选择
+      中文或中英混合知识库：必须使用多语言模型
+        推荐：paraphrase-multilingual-MiniLM-L12-v2（本地，384维）
+        禁止：all-MiniLM-L6-v2（纯英文，不适合中文检索）
+      外部 API Embedding：使用前必须以真实 API Key 验证接口可用性（返回 200），
+        禁止仅凭文档假设可用
+
+□ 3. 入库与查询必须使用同一 Embedding 模型
+      rag_service.py 必须显式指定 query_embeddings，
+      禁止依赖 ChromaDB 隐式 DefaultEmbeddingFunction
+      每次更换 Embedding 模型后，必须删除旧集合并全量重新入库
+
+□ 4. 入库后必须执行检索验证
+      针对每个核心表，至少执行一次语义检索，确认该表文档出现在 Top-3 内
+      验证命令示例：
+        python3 scripts/kb-ingest/validate_ingestion.py --module <模块名>
+      发现目标文档未进 Top-3，须检查 Embedding 模型和文档内容后重新入库，
+      禁止跳过验证直接上线
+
+□ 5. 全量重新入库场景
+      以下任一情况发生，必须删除旧集合并全量重新入库：
+        - Embedding 模型变更
+        - parsed/*.md 源文件内容变更
+        - ChromaDB 集合向量维度与当前模型不匹配
+```
+
+### 14.3 入库操作标准命令
+
+```bash
+# ① 删除旧集合（模型或文档变更时必须执行）
+python3 -c "
+import chromadb
+client = chromadb.PersistentClient(path='scripts/kb-ingest/data/chromadb')
+client.delete_collection('itsm_db_structure')
+"
+
+# ② 全量重新入库（使用多语言本地模型）
+for module in "工单核心" "SLA引擎" "用户与权限" "服务配置引擎" \
+              "知识库" "运维日历与排班" "通知与审计" "附件管理"; do
+  CHROMA_PERSIST_DIR=scripts/kb-ingest/data/chromadb \
+  python3 scripts/kb-ingest/kb_ingest.py \
+    --module "$module" \
+    --ddl-dir docs/knowledge-base/mes-ddl/parsed/ \
+    --collection itsm_db_structure \
+    --embed-mode local
+done
+
+# ③ 验证检索质量（逐模块）
+python3 scripts/kb-ingest/validate_ingestion.py --module 工单核心
+```
+
+---
+
 *芯智云匠——山东芯通 MES 岗位 AI 智能体资产化项目*
-*CLAUDE.md · 开发行为规范 V1.0 · 2026年4月*
+*CLAUDE.md · 开发行为规范 V1.1 · 2026年4月（十四章：知识库入库规范补充）*
 *本文件受版本控制，修改须经技术负责人批准，变更记录见 Git 历史*

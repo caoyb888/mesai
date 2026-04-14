@@ -1,6 +1,6 @@
 ## 表：itsm_user_group_member（用户组成员关联表，多对多关系）
 
-**模块**：用户与权限  |  **Schema**：itsm  |  **来源文件**：01_用户与权限.sql
+**模块**：用户与权限  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：01_用户与权限.sql
 
 ### 字段明细
 

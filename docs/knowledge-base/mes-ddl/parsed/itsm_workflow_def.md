@@ -1,6 +1,6 @@
 ## 表：itsm_workflow_def（工作流定义表，FSM有限状态机配置持久化，支持热更新）
 
-**模块**：服务配置引擎  |  **Schema**：itsm  |  **来源文件**：02_服务配置引擎.sql
+**模块**：服务配置引擎  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：02_服务配置引擎.sql
 
 ### 字段明细
 

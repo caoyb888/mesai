@@ -1,6 +1,6 @@
 ## 表：itsm_attachment（附件元数据表，文件实体存储于MinIO对象存储，此表仅存元数据）
 
-**模块**：附件管理  |  **Schema**：itsm  |  **来源文件**：08_附件管理.sql
+**模块**：附件管理  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：08_附件管理.sql
 
 ### 字段明细
 

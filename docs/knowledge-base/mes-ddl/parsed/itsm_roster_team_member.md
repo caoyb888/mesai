@@ -1,6 +1,6 @@
 ## 表：itsm_roster_team_member（值班团队成员表，定义团队成员及轮班顺序）
 
-**模块**：运维日历与排班  |  **Schema**：itsm  |  **来源文件**：06_运维日历与排班.sql
+**模块**：运维日历与排班  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：06_运维日历与排班.sql
 
 ### 字段明细
 

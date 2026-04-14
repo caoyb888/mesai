@@ -1,6 +1,6 @@
 ## 表：itsm_sla_record（工单SLA计算记录表，每工单一行，精确记录SLA达成情况）
 
-**模块**：SLA引擎  |  **Schema**：itsm  |  **来源文件**：04_SLA 引擎.sql
+**模块**：SLA引擎  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：04_SLA 引擎.sql
 
 ### 字段明细
 

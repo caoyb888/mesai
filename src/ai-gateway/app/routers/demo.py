@@ -23,26 +23,128 @@ from app.services.rag_service import get_rag_service, COLLECTION_DB, COLLECTION_
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/ai", tags=["ITSM演示"])
 
+# ── ITSM 数据库真实表结构（用于注入 Prompt，防止 LLM 猜错表名/字段名）──────
+_ITSM_DB_SCHEMA = """
+数据库：itsm_dev（PostgreSQL 15.x）
+所有表均在 public schema，引用时直接写表名，禁止加任何 schema 前缀。
+
+[核心工单表]
+itsm_ticket(id, ticket_no, model_id, title, description, status, priority, source,
+  created_user_id, assigned_group_id, assigned_user_id, form_data_json,
+  sla_deadline_response, sla_deadline_resolve, response_at, resolved_at,
+  sla_response_status, sla_resolve_status, close_reason, closed_at,
+  created_at, updated_at, created_by, is_deleted/*smallint,0=正常,1=删除*/)
+
+[工单流转日志]
+itsm_ticket_flow_log(id, ticket_id, from_status, to_status, action, actor_type,
+  operator_id, remark, extra_json, operated_at)
+-- 注意：流转表名是 itsm_ticket_flow_log，无 transition_time/transition_by 字段
+
+[工单评论]
+itsm_ticket_comment(id, ticket_id, user_id, content, is_internal, created_at, updated_at, created_by, is_deleted)
+
+[工单附件]
+itsm_attachment(id, ref_type, ref_id, file_name, file_size, file_type, file_ext,
+  bucket_name, object_key, md5, created_at, created_by, is_deleted)
+
+[工单关联配置项]
+itsm_ticket_ci_map(ticket_id, ci_id, ci_type, ci_name, relation_type, created_at, created_by)
+
+[SLA 记录]
+itsm_sla_record(id, ticket_id, sla_policy_id, priority, created_at_tick,
+  response_deadline, resolve_deadline, actual_response_at, actual_resolve_at,
+  response_work_minutes, resolve_work_minutes, response_status, resolve_status,
+  suspended_minutes, created_at, updated_at)
+
+[SLA 策略]
+itsm_sla_policy(id, name, service_time_type, service_time_json,
+  response_minutes_low/medium/high/critical, resolve_minutes_low/medium/high/critical,
+  warn_threshold_pct, created_at, updated_at, created_by, is_deleted)
+
+[用户]
+itsm_user(id, account_no, employee_name, password_hash, phone, email, avatar_url,
+  dept_id, status, last_login_at, last_login_ip, created_at, updated_at, created_by, is_deleted)
+
+[用户组]
+itsm_user_group(id, name, dept_id, description, created_at, updated_at, created_by, is_deleted)
+itsm_user_group_member(group_id, user_id, role_in_group, joined_at)
+
+[部门]
+itsm_dept(id, name, parent_id, sort_order, created_at, updated_at, created_by, is_deleted)
+
+[角色权限]
+itsm_role(id, code, name, description, is_system, created_at, updated_at, created_by, is_deleted)
+itsm_permission(id, code, name, type, resource_path, parent_id, sort_order, created_at, updated_at, created_by, is_deleted)
+itsm_role_permission(role_id, permission_id)
+itsm_user_role(user_id, role_id, granted_at, granted_by)
+
+[服务目录与服务模型]
+itsm_service_catalog(id, name, parent_id, icon_url, sort_order, created_at, updated_at, created_by, is_deleted)
+itsm_service_model(id, catalog_id, name, code, description, workflow_def_id, sla_policy_id,
+  default_group_id, status, created_at, updated_at, created_by, is_deleted)
+
+[工作流定义]
+itsm_workflow_def(id, name, code, states_json, transitions_json, allow_close_states,
+  version, status, created_at, updated_at, created_by, is_deleted)
+
+[配置项 CMDB]
+itsm_ci(id, ci_no, ci_type_id, ci_type_code, name, status, environment,
+  owner_group_id, ip_address, hostname, attributes, description, created_at, updated_at, created_by, is_deleted)
+itsm_ci_type(id, name, code, icon, attribute_schema, description, sort_order, created_at, updated_at, created_by, is_deleted)
+itsm_ci_relation(id, source_ci_id, target_ci_id, relation_type, description, created_at, updated_at, created_by, is_deleted)
+
+[知识库]
+itsm_kb_article(id, category_id, title, summary, keywords, status, current_version,
+  published_at, published_by, reviewer_id, reviewed_at, review_comment,
+  view_count, useful_count, created_at, updated_at, created_by, is_deleted)
+itsm_kb_article_version(id, article_id, version, content, change_note, created_at, created_by)
+itsm_kb_category(id, name, parent_id, sort_order, created_at, updated_at, created_by, is_deleted)
+
+[通知]
+itsm_notify_log(id, channel_type, ticket_id, recipient, subject, content, status,
+  retry_count, error_msg, sent_at, created_at)
+itsm_notify_template(id, event_type, channel_type, subject, body_template, description, is_enabled, created_at, updated_at, created_by, is_deleted)
+itsm_notify_channel(id, channel_type, name, config_json, is_enabled, rate_limit_count, daily_quota, updated_at, updated_by)
+
+[排班]
+itsm_roster_team(id, name, description, group_id, created_at, updated_at, created_by, is_deleted)
+itsm_roster_team_member(team_id, user_id, sort_order, joined_at)
+itsm_roster_schedule(id, team_id, user_id, schedule_date, shift_type, start_time, end_time, is_on_duty, created_at, updated_at, created_by, is_deleted)
+
+[审计日志]
+itsm_audit_log(id, user_id, account_no, login_ip, user_agent, trace_id, module, action,
+  resource_type, resource_id, before_json, after_json, result, error_msg, operated_at)
+
+[表单字段]
+itsm_form_field(id, model_id, field_key, field_type, label, placeholder, required,
+  options_json, validation_json, default_value, sort_order, created_at, updated_at, created_by, is_deleted)
+"""
+
 # ── Prompt 模板 ──────────────────────────────────────────────────
 
-_SYSTEM_ROLE_SQL = """你是芯智云匠项目的 MES AI 开发工程师，专注于 ITSM 系统的数据库查询优化。
-技术栈：MySQL 8.x，MyBatis Plus，中文注释。
-任务类型：根据业务描述生成可执行的 SELECT 查询 SQL。
+_SYSTEM_ROLE_SQL = f"""你是芯智云匠项目的 MES AI 开发工程师，专注于 ITSM 系统的数据库查询优化。
+任务类型：根据业务描述生成可直接执行的 SELECT 查询 SQL（无需参数占位符）。
+
+{_ITSM_DB_SCHEMA}
+
 规范：
-  - 禁止 SELECT *，必须明确列出所有返回字段
-  - 所有 WHERE 条件使用参数化占位符（:param 格式，便于演示）
-  - 逻辑删除字段（is_deleted = 0）必须包含在 WHERE 中
+  - 禁止 SELECT *，必须明确列出所有返回字段，字段名必须来自上方真实表结构
+  - WHERE 条件直接将业务描述中的具体值以字面量嵌入 SQL（如 title = 'ITSM数据库查询性能下降'），禁止使用任何占位符（:param、$1、? 等）
+  - 有 is_deleted 字段的表，WHERE 中必须加 is_deleted = 0
   - 超过3张表的 JOIN 须附执行计划说明
-  - 字符串模糊搜索用 CONCAT('%', :param, '%') 而非直接拼接
+  - 字符串模糊搜索用 LIKE '%关键词%' 格式
   - 每个 SQL 片段需有中文注释说明其作用"""
 
-_SYSTEM_ROLE_DML = """你是芯智云匠项目的 MES AI 开发工程师，专注于 ITSM 系统的数据维护操作。
-技术栈：MySQL 8.x，中文注释。
-任务类型：根据业务描述生成数据变更 SQL（INSERT/UPDATE/DELETE）。
+_SYSTEM_ROLE_DML = f"""你是芯智云匠项目的 MES AI 开发工程师，专注于 ITSM 系统的数据维护操作。
+任务类型：根据业务描述生成可直接执行的数据变更 SQL（INSERT/UPDATE/DELETE，无需参数占位符）。
+
+{_ITSM_DB_SCHEMA}
+
 规范：
   - 所有 DML 操作必须包含 WHERE 条件，禁止全表更新或删除
-  - 参数使用占位符（:param 格式，便于演示）
-  - UPDATE 操作必须更新 updated_at 字段
+  - WHERE 条件直接将业务描述中的具体值以字面量嵌入 SQL，禁止使用任何占位符（:param、$1、? 等）
+  - 字段名必须来自上方真实表结构，禁止使用不存在的字段
+  - UPDATE 操作必须更新 updated_at 字段（使用 NOW()）
   - DELETE 操作优先使用逻辑删除（UPDATE is_deleted = 1），而非物理删除
   - 批量操作须说明建议批次大小（≤ 500 条/批）
   - 每个关键步骤需有中文注释"""

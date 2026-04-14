@@ -1,6 +1,6 @@
 ## 表：itsm_role_permission（角色权限关联表，定义角色拥有的权限集合）
 
-**模块**：用户与权限  |  **Schema**：itsm  |  **来源文件**：01_用户与权限.sql
+**模块**：用户与权限  |  **PostgreSQL Schema**：public（SQL中直接写表名，禁止添加任何schema前缀）  |  **来源文件**：01_用户与权限.sql
 
 ### 字段明细
 
