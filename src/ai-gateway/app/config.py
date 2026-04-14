@@ -63,6 +63,7 @@ class Settings(BaseSettings):
         "env_file": ".env",             # 本地开发用，.env 文件在 .gitignore 中
         "env_file_encoding": "utf-8",
         "case_sensitive": False,        # 环境变量不区分大小写
+        "extra": "ignore",              # 允许 .env 中存在未声明字段（如 ITSM_DB_*）
     }
 
 

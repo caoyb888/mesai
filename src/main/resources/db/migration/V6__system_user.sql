@@ -7,7 +7,7 @@
 -- 关联需求：REQ-MES-AI-20260412-005
 -- ============================================================
 
-USE mesai_app;
+USE mes_ai_task;
 
 -- 系统用户表
 CREATE TABLE IF NOT EXISTS sys_user (

@@ -11,6 +11,7 @@ export default defineConfig({
     }
   },
   server: {
+    host: '0.0.0.0',
     port: 5173,
     proxy: {
       // 代理 /api/* 请求到 Spring Boot 后端（去掉 /api 前缀）

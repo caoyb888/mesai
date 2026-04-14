@@ -10,6 +10,7 @@ import com.xingtong.mesai.module.demo.vo.DemoQueryVO;
 import com.xingtong.mesai.module.demo.vo.SqlExecutionResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
@@ -54,10 +55,12 @@ public class DemoService {
 
     private String itsmDemoUrl;
 
-    /** ITSM 测试数据源 JdbcTemplate（可能为 null，未配置时不注入）*/
+    /** ITSM 测试数据源 JdbcTemplate（可能为 null，未配置时不注入）
+     * 使用字段注入 + required=false，避免 @RequiredArgsConstructor 丢失 @Qualifier 的问题 */
+    @Autowired(required = false)
     @Qualifier("itsmJdbcTemplate")
     @Nullable
-    private final JdbcTemplate itsmJdbcTemplate;
+    private JdbcTemplate itsmJdbcTemplate;
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
