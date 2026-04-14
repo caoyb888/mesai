@@ -14,9 +14,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-import chromadb
-from chromadb.errors import InvalidCollectionException
-
+# chromadb 和 sentence_transformers 在 __init__ 中懒加载，
+# 避免模块级 import 在未安装依赖的环境（如精简 CI）中导致整体导入失败。
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -41,9 +40,10 @@ class RagService:
     def __init__(self):
         settings = get_settings()
         try:
-            self._client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
-            # 使用多语言模型，与入库时保持一致（paraphrase-multilingual-MiniLM-L12-v2）
+            import chromadb as _chromadb
             from sentence_transformers import SentenceTransformer
+            self._client = _chromadb.PersistentClient(path=settings.chroma_persist_dir)
+            # 使用多语言模型，与入库时保持一致（paraphrase-multilingual-MiniLM-L12-v2）
             self._embed_model = SentenceTransformer(
                 "paraphrase-multilingual-MiniLM-L12-v2"
             )
@@ -72,7 +72,7 @@ class RagService:
 
         try:
             col = self._client.get_collection(collection_name)
-        except (InvalidCollectionException, Exception) as e:
+        except Exception as e:
             log.warning("集合 %s 不存在或无法访问：%s", collection_name, e)
             return []
 
