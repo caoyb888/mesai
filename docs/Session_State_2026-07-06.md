@@ -14,7 +14,13 @@
 | **S3-0 素材前置**（建图/P0 选取/代码字典/P0 深析/大包切分）| ✅ 全部落地（工具产物在 scratchpad）|
 | S3-1/S3-2 实际 AI 训练 | ⬜ 未开始（需脱敏链路 + 评审需求单 + 调用 Kimi）|
 
-## 二、交付物（均在 develop 分支，**未提交**）
+## 〇、版本控制状态（2026-07-07 更新）
+
+- 分支 **`feature/real-mes-integration`**（基于 develop），4 提交，需求单号 `REQ-MES-AI-20260706-001`（占位待补）。
+- 已 push 到 `origin`；**PR #1**：https://github.com/caoyb888/mesai/pull/1 → 目标 develop，**待 TL 评审**。
+- 提交拆分：feat(7工具+README) / test(6单测,148通过) / docs(4规划文档) / docs(2甲方字典)。
+
+## 二、交付物（已提交至 `feature/real-mes-integration`，PR #1 待评审）
 
 **文档**（`docs/`）：
 - `Plan_Adjustment_RealMES_2026.md` — 计划调整方案（含两轮实测发现）
@@ -82,7 +88,7 @@ python3 -m pytest tests/ -q   # 148 通过
 
 ## 六、未决事项（待用户 / TL）
 
-1. **是否 git 提交**这批成果？（CLAUDE.md 5.4 要求 `[REQ-MES-AI-YYYYMMDD-XXX]` 需求单号 + 分类型）
+1. ~~是否 git 提交~~ → 已提交 feature 分支 + push + 建 PR #1；**待补正式需求单号**、待 TL 评审合并。
 2. **P0 规模**：Phase-1 用 Top100 表 + Top60 包体，首周按 Token 消耗校准。
 3. **韩文处理深度**：P0 术语精校 vs 全量译。
 4. **是否开始调用 Kimi 训练**（S3-1/S3-2）——涉及外部 AI + 脱敏 + 需评审需求单。
