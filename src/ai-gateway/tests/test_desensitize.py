@@ -23,17 +23,23 @@ def should_mask_internal_ip():
     assert "192.168.1.100" not in clean and "[IP_ADDR_***]" in clean and hits == 1
 
 
-def should_mask_public_ip_too():
-    # 全 IPv4 均脱敏（含公网段），非仅私网段。用 RFC 5737 文档保留地址做测试，
-    # 严禁把真实基础设施 IP 写入代码（CLAUDE.md 4.1）。
-    clean, hits = desensitize("DB 主机 203.0.113.5 与远程 198.51.100.7")
-    assert "203.0.113.5" not in clean and "198.51.100.7" not in clean and hits == 2
+def should_mask_internal_ranges_10_172_100():
+    # 内网段：RFC1918 的 10./172.16-31. 与 CGNAT 100.64-127. 均脱敏
+    clean, hits = desensitize("节点 10.0.5.9、172.16.3.4、100.90.1.2 内网互通")
+    assert "10.0.5.9" not in clean and "172.16.3.4" not in clean and "100.90.1.2" not in clean
+    assert hits == 3
 
 
-def should_not_mask_invalid_ipv4_octets():
-    # 999.1.1.1 非法八位段，不应误判为 IP
-    clean, hits = desensitize("版本号 999.1.1.1 不是地址")
-    assert hits == 0 and clean == "版本号 999.1.1.1 不是地址"
+def should_not_mask_version_number_like_ip():
+    # 版本号/层级号 2.1.2.1 非内网地址，不应误判（这是真实 P0 源码里的误报来源）
+    clean, hits = desensitize("指标版本 2.1.2.1 与 2.2.3.1 升级")
+    assert hits == 0 and clean == "指标版本 2.1.2.1 与 2.2.3.1 升级"
+
+
+def should_not_mask_public_ip():
+    # 按 CLAUDE.md「内网IP」原意，仅收窄内网段；公网地址不在脱敏范围
+    clean, hits = desensitize("外部 203.0.113.5 非内网")
+    assert hits == 0
 
 
 def should_mask_db_connection_string_jdbc():
@@ -69,9 +75,17 @@ def should_mask_site_param_fab_format():
     assert "FAB-NJ-01" not in clean and "[SITE_PARAM_***]" in clean and hits == 1
 
 
-def should_mask_device_sn():
-    clean, hits = desensitize("设备 AB1234567 报警")
-    assert "AB1234567" not in clean and "[DEVICE_SN_***]" in clean and hits == 1
+def should_mask_device_sn_asterisk_format():
+    # CLAUDE.md 示例的带星号 SN 字面量 AB****3456
+    clean, hits = desensitize("设备 AB****3456 报警")
+    assert "AB****3456" not in clean and "[DEVICE_SN_***]" in clean and hits == 1
+
+
+def should_not_mask_business_codes_as_device_sn():
+    # 消息码/模块码 MSG00108、SPGC0030、SMS00001 结构似 SN 但为业务标识，不得抹掉
+    text = "消息 MSG00108 模块 SPGC0030 画面 SMS00001"
+    clean, hits = desensitize(text)
+    assert clean == text and hits == 0
 
 
 # ── 误伤防护（关键：不得抹掉钢厂业务语义）────────────────────

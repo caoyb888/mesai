@@ -36,13 +36,6 @@ def _valid_ipv4(text: str) -> bool:
     return len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
 
 
-def _valid_device_sn(text: str) -> bool:
-    """设备序列号候选校验：字母≥2 且 数字≥4（排除纯数字日期段、短牌号）。"""
-    letters = sum(c.isalpha() for c in text)
-    digits = sum(c.isdigit() for c in text)
-    return letters >= 2 and digits >= 4
-
-
 # 规则表（顺序敏感：连接串 → IP → 身份证 → 工号 → 批次 → 厂区 → 设备SN）
 _RULES = [
     # 数据库连接串：jdbc URL / Oracle easy-connect(host:port/service) / user:pwd@host
@@ -53,9 +46,17 @@ _RULES = [
              r"|\b[A-Za-z0-9_]+/[^\s@/]{3,}@[\w.:/\-]+"
          ),
          "[DB_CONN_***]", None),
-    # 内网/任意 IPv4（四段 0-255 校验）
+    # 内网 IP：仅私网/内网段（RFC1918 + CGNAT 100.64/10）。
+    # 按 CLAUDE.md「内网IP」原意收窄，避免把版本号 2.1.2.1 之类误判为地址。
     Rule("内网IP", "IP_ADDR",
-         re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+         re.compile(
+             r"\b(?:"
+             r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+             r"|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+             r"|192\.168\.\d{1,3}\.\d{1,3}"
+             r"|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"
+             r")\b"
+         ),
          "[IP_ADDR_***]", _valid_ipv4),
     # 身份证号：18 位，含合法出生日期段
     Rule("身份证号", "ID_CARD",
@@ -74,10 +75,14 @@ _RULES = [
     Rule("厂区编号", "SITE_PARAM",
          re.compile(r"\bFAB-[A-Z]{2,4}-\d{2,3}\b"),
          "[SITE_PARAM_***]", None),
-    # 设备序列号：大写字母数字 ≥8，经校验器过滤（字母≥2 且 数字≥4）
+    # 设备序列号：按 CLAUDE.md 示例 `AB****3456` 的**带星号**格式精确匹配。
+    # 关键权衡：不带星号的 SN（如 AB123456）与业务消息码/模块码（MSG00108、
+    # SPGC0030）结构完全一致，无法上下文无关区分——若泛匹配会把海量业务码抹掉、
+    # 毁掉训练信号。故只匹配含掩码星号的 SN 字面量；裸 SN 需业务方给定专有格式后
+    # 用 --sn-regex 扩展（详见脱敏审计报告结论）。
     Rule("设备序列号", "DEVICE_SN",
-         re.compile(r"\b[A-Z0-9]{8,}\b"),
-         "[DEVICE_SN_***]", _valid_device_sn),
+         re.compile(r"\b[A-Z0-9]{2,}\*{2,}[A-Z0-9]{2,}\b"),
+         "[DEVICE_SN_***]", None),
 ]
 
 
