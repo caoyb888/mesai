@@ -2,6 +2,18 @@
 
 > 本文件为工作状态快照，供恢复/交接。记录：进度、交付物、关键发现、产物位置（含临时产物再生成命令）、未决事项、恢复指南。
 
+## ★ 2026-07-14 增量③：S3-0 全套素材已落远程持久目录 + 一键可复现
+
+- **新增两脚本固化 S3-0 重生成**（已提交 commit 3850bd3，168 单测通过）：
+  - `scripts/kb-ingest/select_p0_topn.py`：从 procs/tables.csv 按中心度取 Top60 包体 + Top100 表，**固化此前即席的 Top-N 选取**（解决 `p0_phase1` 名单不可复现的缺口）。
+  - `scripts/kb-ingest/regen_s3_0.sh`：六步一键重生成（盘点→建图→选P0→拉源码→切分→对账）。
+- **已在远程实跑，全套素材落 `/home/xintong/mes-s3-data/s3-0/`**（持久、非仓库，约 1 分钟跑完）：
+  - `meta_mes_nosrc.json`(22MB,结构) / `meta_p0.json`(33MB,Top60源码) / `split_all.json`(1401子程序) / `split_report.md`
+  - `graph_mes/`：`core_assets.md` / `procs.csv` / `tables.csv` / `p0_units.txt` / **`p0_phase1_units.txt`(Top60)** / `p0_phase1_tables.txt`(Top100)
+  - `dict_reconcile_report.md` / `discrepancies.csv`(58508 差异) / glossary_*（增量②产物）
+- **逐项复现历史基线**：建图 过程5101/表2249/环77；P0 核心包 BSCT_COST/BSQM_MTC_ISSUE/BSMS_OPER_BOF/BSPR_HEAT_FCE；切分 60包→1401子程序；最大包 BSCH_BATCHA_PLT_JOB2 15929行→44子程序。
+- **一键重生成命令**（远程）：`MES_DB_USER=SYSTEM MES_DB_PASSWORD=<口令> MES_DB_DSN=10.30.10.111:25521/XEPDB1 PYTHON=/home/xintong/xintongmesai/.venv/bin/python bash scripts/kb-ingest/regen_s3_0.sh /home/xintong/mes-s3-data/s3-0`
+
 ## ★ 2026-07-14 增量②：真实库接入（新 IP）+ 中韩英术语对照表 T3-0-5 落地
 
 - **真实库地址变更**：`10.30.10.111:25521/XEPDB1`（SYSTEM，Oracle 21c XE，MESAPUSER 1860 表，与原 `100.84.68.115` 同一套库换 IP）。**沙箱侧该网段不可达，仅远程测试机可达** → 一切接库操作走远程。口令仅运行时 env，不落盘。
