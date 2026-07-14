@@ -25,38 +25,48 @@ mkdir -p "$GRAPH"
 
 echo "===== S3-0 重生成开始 · 输出目录 $OUT_DIR ====="
 
-echo "[1/7] 结构盘点（--no-source，约 30s）..."
+echo "[1/8] 结构盘点（--no-source，约 30s）..."
 $PY "$KB_DIR/db_introspect.py" --owner MESAPUSER --no-source --use-dba \
     --out "$OUT_DIR/meta_mes_nosrc.json"
 
-echo "[2/7] 全量建图（约 7 分钟）..."
+echo "[2/8] 全量建图（约 7 分钟）..."
 $PY "$KB_DIR/build_dep_graph.py" --owner MESAPUSER --use-dba --out-dir "$GRAPH"
 
-echo "[3/7] P0 Top-N 中心度选取（Top60 包体 + Top100 表）..."
+echo "[3/8] P0 Top-N 中心度选取（Top60 包体 + Top100 表）..."
 $PY "$KB_DIR/select_p0_topn.py" \
     --procs-csv "$GRAPH/procs.csv" --tables-csv "$GRAPH/tables.csv" \
     --top-procs 60 --top-tables 100 \
     --out-units "$GRAPH/p0_phase1_units.txt" --out-tables "$GRAPH/p0_phase1_tables.txt"
 
-echo "[4/7] 拉 Top60 P0 源码..."
+echo "[4/8] 拉 Top60 P0 源码..."
 $PY "$KB_DIR/db_introspect.py" --owner MESAPUSER --use-dba \
     --source-units-file "$GRAPH/p0_phase1_units.txt" --out "$OUT_DIR/meta_p0.json"
 
-echo "[5/7] 大包子程序切分..."
+echo "[5/8] 大包子程序切分..."
 $PY "$KB_DIR/plsql_splitter.py" --input "$OUT_DIR/meta_p0.json" \
     --out-json "$OUT_DIR/split_all.json" --out-report "$OUT_DIR/split_report.md"
 
-echo "[6/7] 字典对账（活库结构 × 字典 CSV）..."
+echo "[6/8] 字典对账（活库结构 × 字典 CSV）..."
 $PY "$KB_DIR/dict_reconcile.py" --introspect "$OUT_DIR/meta_mes_nosrc.json" \
     --dict-csv "$DICT_CSV" \
     --out-report "$OUT_DIR/dict_reconcile_report.md" \
     --out-csv "$OUT_DIR/discrepancies.csv"
 
-echo "[7/7] P0 表卡片生成（Top100 表：结构+语义+热度）..."
+echo "[7/8] P0 表卡片生成（Top100 表：结构+语义+热度）..."
 $PY "$KB_DIR/build_table_cards.py" \
     --meta "$OUT_DIR/meta_mes_nosrc.json" --dict-csv "$DICT_CSV" \
     --p0-tables "$GRAPH/p0_phase1_tables.txt" --tables-csv "$GRAPH/tables.csv" \
     --out-md "$OUT_DIR/p0_table_cards.md" --out-jsonl "$OUT_DIR/p0_table_cards.jsonl"
+
+echo "[8/8] 脱敏审计（外发 Kimi 前合规门：P0源码+表卡片+术语表）..."
+$PY "$KB_DIR/../desensitize/audit_materials.py" \
+    --material "$OUT_DIR/meta_p0.json" \
+    --material "$OUT_DIR/p0_table_cards.md" \
+    --material "$OUT_DIR/glossary_zh_ko_en.csv" \
+    --material "$OUT_DIR/dict_reconcile_report.md" \
+    --material "$OUT_DIR/split_report.md" \
+    --out-report "$OUT_DIR/desensitize_audit_report.md" \
+    --out-json "$OUT_DIR/desensitize_audit_hits.json"
 
 echo "===== S3-0 重生成完成 → $OUT_DIR ====="
 ls -la "$OUT_DIR" "$GRAPH"
