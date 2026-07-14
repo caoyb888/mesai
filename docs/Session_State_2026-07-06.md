@@ -1,6 +1,18 @@
-# 会话状态 / 交接 · 2026-07-06
+# 会话状态 / 交接 · 2026-07-06（末次更新 2026-07-14）
 
 > 本文件为工作状态快照，供恢复/交接。记录：进度、交付物、关键发现、产物位置（含临时产物再生成命令）、未决事项、恢复指南。
+
+## ★ 2026-07-14 增量：远程开发机 + Python 环境就绪
+
+本机配置低，**开发改为远程测试机为主**（编译/测试/训练走远程）。
+
+- **远程机**：`ssh 100.95.76.81`（config 别名 `intranet-host`，用户 `xintong`，主机名 `onlyofficebak`）。免登录已配好，直连 IP 也免密。规格 **16 核 / 62G / 无 GPU / Ubuntu 22.04 / Python 3.10.12**。
+- **项目目录**：`/home/xintong/xintongmesai`，从 `github.com/caoyb888/mesai.git` clone，同分支 `feature/real-mes-integration`（HEAD 与本机一致）。
+- **Python 环境**：项目级 venv `/home/xintong/xintongmesai/.venv`。装了 `src/ai-gateway` + `scripts/kb-ingest` 两份 requirements，**23 个钉版全部满足**；torch 用 **CPU 版**（`2.13.0+cpu`，避开 2.5G CUDA 包）。远程原本无 pip、缺 `python3.10-venv`，已 `sudo apt` 补齐。
+- **验证**：19 关键包导入 OK；**全部 177 用例真实跑通**（ai-gateway 29 passed / 覆盖 77%，kb-ingest 148 passed / 覆盖 52%※），0 失败 0 错误。
+  - ※ kb-ingest 52% 是 `--cov` 把入库脚本（需真实 DB/Embedding）算进分母所致，被测解析器模块覆盖率本身高，非测试缺失。
+- 无害提示：`wheel` 要 `packaging>=24` 但依赖钉 23.2，仅影响打包不影响运行。
+- **日常用法**（不用 activate）：`ssh 100.95.76.81 'cd /home/xintong/xintongmesai && .venv/bin/pytest scripts/kb-ingest/tests -q'`；本机 push 后远程 `git pull` 同步。
 
 ## 一、当前进度
 
