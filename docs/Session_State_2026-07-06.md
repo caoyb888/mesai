@@ -16,7 +16,11 @@
 - **结果**：**表 95/95、存储过程 1308/1309（99.9%）**，总 **3.83M tokens**。质量抽检好（韩文语义译中、状态字段标待解码、零臆断）。
 - **产物**（远程持久，非仓库）：`/home/xintong/mes-s3-data/s3-train/{tables,procs}/*.md` + `_index_*.jsonl`；报告 `docs/S3-1_表字段理解报告.md`、`docs/S3-2_存储过程理解报告.md`。
 - **网关起法**（远程）：`bash /home/xintong/mes-s3-data/orch2.sh`（重启高预算网关→3分片全量procs→128k补超宽表）；单跑：起 uvicorn（env 注入 AI_API_KEY/AI_MODEL）后 `AI_GATEWAY_URL=http://127.0.0.1:8000 python run_s3_training.py --phase ...`。
-- **未决**：SQL 场景验证+人工评分(T3-1-4/5)、BIZ 抽检(T3-2-4)、断言种子(T3-4-2)、RAG 入库、1 残留过程+13 个 >1200 行超大过程二次切分补跑。
+- **验收前置进展（2026-07-15 续）**：
+  - ✅ **补跑 1+13**：procs 1308→**1314**（剩 ~8 个 >4000 行 fallback 段待二次切分）。
+  - ✅ **断言种子**(T3-4-2)：`build_assertion_seeds.py` 从 proc_parser 静态分析确定性产 **657 条**→`/assertions/{state-machine,sql-logic,api-behavior}`（Critical 89主键/High 171状态流转/Medium 397），已提交；纳基准库须 TL 审批。
+  - ✅ **RAG 入库**：`ingest_s3_cards.py`（复用多语言 embedding，§14 合规）→95表+1314过程=**4339 chunk** 入集合 `mes_s3_understanding`（落 `scripts/kb-ingest/data/chromadb`，gitignored 可重生成）；过程召回 0.7+。**⚠️ gotcha**：远程内网不通 huggingface，须 `HF_ENDPOINT=https://hf-mirror.com` 拉模型（已缓存）。
+- **仍未决**：④ SQL 场景题库+**人工评分≥85%**(T3-1-4/5)、⑤ **BIZ 抽检**(T3-2-4)、rag_service 接 `mes_s3_understanding`、~8 超大过程二次切分。
 
 ## ★ 2026-07-14 增量⑤：脱敏链路已补全 + 训练素材审计认证「可外发」
 
