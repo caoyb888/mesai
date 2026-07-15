@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 # 知识库集合名称映射
 COLLECTION_DB = "itsm_db_structure"
 COLLECTION_API = "itsm_api_docs"
+# 真实 MES S3 理解卡片集合（表理解 + 过程理解，入库见 ingest_s3_cards.py）
+COLLECTION_MES_S3 = "mes_s3_understanding"
 
 
 @dataclass
@@ -58,6 +60,7 @@ class RagService:
         query: str,
         collection_name: str,
         top_n: Optional[int] = None,
+        where: Optional[dict] = None,
     ) -> list[RagDocument]:
         """
         从指定集合检索与 query 最相关的 Top-N 文档
@@ -65,6 +68,7 @@ class RagService:
         :param query: 用户查询文本
         :param collection_name: ChromaDB 集合名称
         :param top_n: 返回条数，None 则使用配置默认值
+        :param where: 可选元数据过滤（如 {"chunk_type": "s3_table"}）
         :return: 按相关度排序的文档列表（最相关优先）
         """
         settings = get_settings()
@@ -79,11 +83,14 @@ class RagService:
         try:
             # 用多语言模型生成查询向量，与入库时保持一致
             query_vector = self._embed_model.encode([query])[0].tolist()
-            results = col.query(
-                query_embeddings=[query_vector],
-                n_results=min(n, col.count()),
-                include=["documents", "metadatas", "distances"],
-            )
+            query_kwargs = {
+                "query_embeddings": [query_vector],
+                "n_results": min(n, col.count()),
+                "include": ["documents", "metadatas", "distances"],
+            }
+            if where:
+                query_kwargs["where"] = where
+            results = col.query(**query_kwargs)
         except Exception as e:
             log.error("ChromaDB 查询失败 collection=%s query=%s err=%s", collection_name, query, e)
             return []
@@ -112,6 +119,24 @@ class RagService:
         """针对前端组件生成场景，从 ITSM API 文档集合检索上下文"""
         return self.retrieve(question, COLLECTION_API, top_n)
 
+    def retrieve_for_mes(self, question: str, top_n: Optional[int] = None,
+                         kind: Optional[str] = None) -> list[RagDocument]:
+        """
+        从真实 MES S3 理解卡片集合检索上下文（表理解 + 过程理解）。
+
+        :param kind: 可选，"table" 只检索表卡片 / "proc" 只检索过程卡片 / None 混检
+        """
+        where = {"chunk_type": f"s3_{kind}"} if kind in ("table", "proc") else None
+        return self.retrieve(question, COLLECTION_MES_S3, top_n, where=where)
+
+    def retrieve_for_mes_table(self, question: str, top_n: Optional[int] = None) -> list[RagDocument]:
+        """MES 表/字段场景，仅检索表理解卡片"""
+        return self.retrieve_for_mes(question, top_n, kind="table")
+
+    def retrieve_for_mes_proc(self, question: str, top_n: Optional[int] = None) -> list[RagDocument]:
+        """MES 存储过程场景，仅检索过程逻辑卡片"""
+        return self.retrieve_for_mes(question, top_n, kind="proc")
+
     def format_context(self, docs: list[RagDocument]) -> str:
         """
         将检索到的文档列表格式化为 Prompt 上下文注入格式（STANDARD_TEMPLATE §2 规范）
@@ -121,8 +146,9 @@ class RagService:
 
         parts = []
         for i, doc in enumerate(docs, 1):
-            source = doc.metadata.get("source", "未知来源")
-            doc_type = doc.metadata.get("type", "unknown")
+            # 兼容 ITSM（source/type）与 S3 理解卡片（source_file/chunk_type）两套元数据
+            source = doc.metadata.get("source") or doc.metadata.get("source_file", "未知来源")
+            doc_type = doc.metadata.get("type") or doc.metadata.get("chunk_type", "unknown")
             parts.append(
                 f"--- 文档片段 {i}/{len(docs)} ---\n"
                 f"来源：{source} | 类型：{doc_type}\n"
