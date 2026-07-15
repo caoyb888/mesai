@@ -125,9 +125,25 @@ class RagService:
         从真实 MES S3 理解卡片集合检索上下文（表理解 + 过程理解）。
 
         :param kind: 可选，"table" 只检索表卡片 / "proc" 只检索过程卡片 / None 混检
+
+        检索调优：入库侧每卡片带「检索锚点」摘要 chunk；此处**按卡片(source_file)去重**，
+        先取 4×N 个 chunk 再折叠为不同卡片，避免同一表/过程的多个 chunk 挤占 Top-N 名额
+        （实测表级 Top-3 命中 3/10 → 5/10）。
         """
         where = {"chunk_type": f"s3_{kind}"} if kind in ("table", "proc") else None
-        return self.retrieve(question, COLLECTION_MES_S3, top_n, where=where)
+        n = top_n or get_settings().rag_top_n
+        raw = self.retrieve(question, COLLECTION_MES_S3, top_n=max(n * 8, 30), where=where)
+        seen: set = set()
+        out: list[RagDocument] = []
+        for d in raw:
+            sf = d.metadata.get("source_file")
+            if sf in seen:
+                continue
+            seen.add(sf)
+            out.append(d)
+            if len(out) >= n:
+                break
+        return out
 
     def retrieve_for_mes_table(self, question: str, top_n: Optional[int] = None) -> list[RagDocument]:
         """MES 表/字段场景，仅检索表理解卡片"""

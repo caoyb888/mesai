@@ -17,6 +17,7 @@ S3 理解卡片 RAG 入库：把表理解卡片 + 过程逻辑卡片切块向量
 关联需求单：REQ-MES-AI-20260715-001
 作者：AI（芯智云匠）  日期：2026-07-15
 """
+import re
 import sys
 import argparse
 import logging
@@ -29,28 +30,58 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 
-def chunk_card(text, asset, kind, max_chars=700, overlap=120):
-    """卡片切块：短卡片整块；长卡片定长窗口 + 重叠；每块前缀资产名利于召回。"""
-    text = (text or "").strip()
-    if not text:
-        return []
+def _body(md):
+    """去卡片头部 meta（首个 --- 前）与代码围栏"""
+    b = md.split("\n---\n", 1)[-1].strip()
+    return re.sub(r"```markdown\s*|\s*```", "", b).strip()
+
+
+def _section(body, header_pat):
+    """抓取 '### N. **{header}**' 到下一个标题之间的正文"""
+    m = re.search(r"#+\s*\d*\.?\s*\*{0,2}(?:" + header_pat + r")[^\n]*\n(.+?)(?=\n#+\s|\Z)",
+                  body, re.S)
+    return m.group(1).strip() if m else ""
+
+
+def _windows(text, max_chars, overlap):
     if len(text) <= max_chars:
-        pieces = [text]
-    else:
-        pieces, i = [], 0
-        while i < len(text):
-            pieces.append(text[i:i + max_chars])
-            i += max_chars - overlap
+        return [text]
+    out, i = [], 0
+    while i < len(text):
+        out.append(text[i:i + max_chars])
+        i += max_chars - overlap
+    return out
+
+
+def chunk_card(text, asset, kind, max_chars=700, overlap=120):
+    """
+    卡片切块（检索调优版）：
+      · 每张卡片先产一个「检索锚点」摘要 chunk（表名 + 业务用途 + 核心字段中文语义），
+        天然含中文别名，强化表/过程身份信号，专治「查中文名召不回英文表名」；
+      · 再产明细窗口 chunk，每块均带「[类型] 表名 用途短语」头，保证分块后身份不丢。
+    """
+    body = _body(text)
+    if not body:
+        return []
+    purpose = _section(body, "表用途|用途")
+    fields = _section(body, "核心字段语义|核心字段|字段语义")
+    role = re.split(r"[。\n]", purpose.strip("-* `"))[0][:50] if purpose else ""
+    head = f"[{'表' if kind == 'table' else '过程'}] {asset} {role}".strip()
+
     out = []
-    for j, ch in enumerate(pieces):
-        body = f"[{kind}] {asset}\n{ch}"
-        out.append({
-            "chunk_id": f"{kind}:{asset}:{j}",
-            "text": body,
-            "chunk_type": f"s3_{kind}",
-            "source_file": f"{asset}.md",
-            "token_count": len(body) // 3,
-        })
+    # ① 检索锚点摘要（chunk 0）
+    anchor = f"{head}\n业务用途：{purpose[:300]}"
+    if fields:
+        anchor += f"\n核心字段：{fields[:420]}"
+    out.append({"chunk_id": f"{kind}:{asset}:0", "text": anchor,
+                "chunk_type": f"s3_{kind}", "source_file": f"{asset}.md",
+                "token_count": len(anchor) // 3})
+    # ② 明细窗口（chunk 1..k），每块带身份头
+    for j, piece in enumerate(_windows(body, max_chars, overlap), start=1):
+        t = f"{head}\n{piece}"
+        out.append({"chunk_id": f"{kind}:{asset}:{j}", "text": t,
+                    "chunk_type": f"s3_{kind}", "source_file": f"{asset}.md",
+                    "token_count": len(t) // 3})
     return out
 
 
