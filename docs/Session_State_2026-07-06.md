@@ -38,13 +38,14 @@
 
 **S3-3 业务流程理解（以过程为锚）起步**：
 - ✅ **T3-3-1 状态机反推**：`run_s3_state_machine.py` 从过程 `set_assignments`（列=字面量状态写入）反推 + SCO 代码字典(`glossary_code_mapping.csv`)解码 + Kimi 合成。产 `docs/S3-3_业务流程理解报告.md`（**34 状态字段**：质保书 MTC_STS_CD 2→9 由签发过程触发、计划 PLAN_ROLL_STS、炉次 HEAT_STS…）+ 34 卡片落远程 `s3-train/state_machine/`。**局限**：静态只捕字面量赋值，变量赋值状态不可见（已标「待确认」）。
-- ⬜ **S3-3 未完**：T3-3-2 追溯链路、T3-3-3 核心流程(BSQM/BSCH)、T3-3-4 验证题≥15、T3-3-5 报告完稿。
+- ✅ **T3-3-2 追溯链路**：`run_s3_traceability.py` 从**表结构（同表共键=血缘桥表）+ P0 过程读写血缘**反推批次/卷/试样跨表跨过程追溯链 + Kimi 合成【正向/反向追溯 + 关键桥接点 + 断点待确认】。追溯脊：订单`ORD_NO`→计划炉次`PLAN_HEAT_NO`→浇铸`CAST_NO`/炉次`HEAT_NO`→板坯`SLAB_NO`→钢板`PLT_NO`/钢卷`COIL_NO`→试样`SMP_NO`→质保`MTC_NO`→捆包`BUND_NO`（14 核心键实测全在库，13 条边全有证据）。产 S3-3 报告**第二部分**（幂等追加，marker `<!-- T3-3-2-TRACEABILITY -->`；含核心实体载体画像+13边明细+全链路总览）+ 13 卡片落远程 `s3-train/traceability/`，21.6K tokens。**关键发现**：PLT→MTC 无直接桥表(0)须经 SMP 中转（总览已标断点）；PLT_NO 84 表集中 SPR 精整、MTC_NO 全在 SQM 质量、HEAT_NO 集中 SMS 炼钢——子系统归属自洽。**局限**：桥过程仅 Top60 P0 覆盖(120 单元)、动态 SQL 不可见（已标「待确认」）。+14 单测（`test_traceability.py`，kb-ingest 全套 **193 通过**）。
+- ⬜ **S3-3 未完**：T3-3-3 核心流程(BSQM/BSCH)、T3-3-4 验证题≥15、T3-3-5 报告完稿。
 
 **Phase-1 就绪清单**：`docs/Phase1_验收就绪清单.md`（DoD 逐项三态核对 + 交付物 + TL 复现入口）。**明确 Phase-1 尚未可签字验收**——缺 S3-3 完整 + 三项人工评分 + ITM 签字。
 
-**仍待人工/未完**：SQL 人工终评≥85%、BIZ 抽检填写、断言纳基准库审核、ITM 签字；S3-3 T3-3-2~5；~8 超大过程二次切分；hybrid 泛化后缀去噪。
+**仍待人工/未完**：SQL 人工终评≥85%、BIZ 抽检填写、断言纳基准库审核、ITM 签字；S3-3 T3-3-3~5；~8 超大过程二次切分；hybrid 泛化后缀去噪。
 
-**网关起法（复用）**：远程脚本 `bash /home/xintong/mes-s3-data/{sqlval,labels,statemachine}.sh`（各自含重启网关）；RAG 入库 `bash rag_ingest.sh`。均需 `kimikey` + `HF_ENDPOINT=https://hf-mirror.com`。
+**网关起法（复用）**：远程脚本 `bash /home/xintong/mes-s3-data/{sqlval,labels,statemachine,trace}.sh`（各自含重启网关）；RAG 入库 `bash rag_ingest.sh`。均需 `kimikey` + `HF_ENDPOINT=https://hf-mirror.com`。
 
 ## ★ 2026-07-14 增量⑤：脱敏链路已补全 + 训练素材审计认证「可外发」
 
