@@ -6,7 +6,17 @@
 > ① 远程开发机+venv 就绪　② 真实库新 IP `10.30.10.111:25521/XEPDB1`（仅远程可达）+ 中韩英术语对照表
 > ③ S3-0 全套素材落远程持久目录 `/home/xintong/mes-s3-data/s3-0/` + 一键 `regen_s3_0.sh`（8步可复现）
 > ④ P0 表卡片 95 张（语义 87%）　⑤ 脱敏链路补全 7 类 + 素材审计认证「可外发」（0 命中）
-> **当前状态**：S3-1/S3-2 训练前所有自主前置已就绪；唯一待办=TL 批训练需求单后调 Kimi 实训（未决 #4）。
+> **当前状态**：⭐ **S3-1/S3-2 批训练已跑完（2026-07-15）**——未决 #4 已闭环。见下方「增量⑥」。
+
+## ★ 2026-07-15 增量⑥：S3-1/S3-2 批训练已执行（调 Kimi 实训）
+
+- **需求单**：新建 `docs/REQ-MES-AI-20260715-001_批训练需求单.md`（TL+IT 授权，含**今日预算红线临时授权**留痕：§12 300万→临时 8M 闸，实际用 3.83M，明日恢复）。
+- **驱动**：新增 `scripts/kb-ingest/run_s3_training.py`——经 ai-gateway `/v1/ai/chat`（脱敏门强制）跑 Kimi 理解训练；支持 `--phase tables/procs/smoke`、`--dedup/--shards/--shard-id/--proc-max-tokens/--missing`（可复现/续跑/补漏）。
+- **认证**：IT 给的 Kimi 平台 key 放远程 `kimikey`（sk-，51位，运行时 env，不落盘；已加 `.gitignore`+`.git/info/exclude` 双重忽略。注意：远程 `~/.kimi-code` OAuth 是另一套、未用）。
+- **结果**：**表 95/95、存储过程 1308/1309（99.9%）**，总 **3.83M tokens**。质量抽检好（韩文语义译中、状态字段标待解码、零臆断）。
+- **产物**（远程持久，非仓库）：`/home/xintong/mes-s3-data/s3-train/{tables,procs}/*.md` + `_index_*.jsonl`；报告 `docs/S3-1_表字段理解报告.md`、`docs/S3-2_存储过程理解报告.md`。
+- **网关起法**（远程）：`bash /home/xintong/mes-s3-data/orch2.sh`（重启高预算网关→3分片全量procs→128k补超宽表）；单跑：起 uvicorn（env 注入 AI_API_KEY/AI_MODEL）后 `AI_GATEWAY_URL=http://127.0.0.1:8000 python run_s3_training.py --phase ...`。
+- **未决**：SQL 场景验证+人工评分(T3-1-4/5)、BIZ 抽检(T3-2-4)、断言种子(T3-4-2)、RAG 入库、1 残留过程+13 个 >1200 行超大过程二次切分补跑。
 
 ## ★ 2026-07-14 增量⑤：脱敏链路已补全 + 训练素材审计认证「可外发」
 
