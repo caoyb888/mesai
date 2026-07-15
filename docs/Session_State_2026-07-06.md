@@ -40,11 +40,12 @@
 - ✅ **T3-3-1 状态机反推**：`run_s3_state_machine.py` 从过程 `set_assignments`（列=字面量状态写入）反推 + SCO 代码字典(`glossary_code_mapping.csv`)解码 + Kimi 合成。产 `docs/S3-3_业务流程理解报告.md`（**34 状态字段**：质保书 MTC_STS_CD 2→9 由签发过程触发、计划 PLAN_ROLL_STS、炉次 HEAT_STS…）+ 34 卡片落远程 `s3-train/state_machine/`。**局限**：静态只捕字面量赋值，变量赋值状态不可见（已标「待确认」）。
 - ✅ **T3-3-2 追溯链路**：`run_s3_traceability.py` 从**表结构（同表共键=血缘桥表）+ P0 过程读写血缘**反推批次/卷/试样跨表跨过程追溯链 + Kimi 合成【正向/反向追溯 + 关键桥接点 + 断点待确认】。追溯脊：订单`ORD_NO`→计划炉次`PLAN_HEAT_NO`→浇铸`CAST_NO`/炉次`HEAT_NO`→板坯`SLAB_NO`→钢板`PLT_NO`/钢卷`COIL_NO`→试样`SMP_NO`→质保`MTC_NO`→捆包`BUND_NO`（14 核心键实测全在库，13 条边全有证据）。产 S3-3 报告**第二部分**（幂等追加，marker `<!-- T3-3-2-TRACEABILITY -->`；含核心实体载体画像+13边明细+全链路总览）+ 13 卡片落远程 `s3-train/traceability/`，21.6K tokens。**关键发现**：PLT→MTC 无直接桥表(0)须经 SMP 中转（总览已标断点）；PLT_NO 84 表集中 SPR 精整、MTC_NO 全在 SQM 质量、HEAT_NO 集中 SMS 炼钢——子系统归属自洽。**局限**：桥过程仅 Top60 P0 覆盖(120 单元)、动态 SQL 不可见（已标「待确认」）。+14 单测（`test_traceability.py`，kb-ingest 全套 **193 通过**）。
 - ✅ **T3-3-3 核心流程(BSQM/BSCH)**：`run_s3_core_process.py` 在 S3-2 逐过程之上做**流程编排级**理解——按 12 核心流程组聚合 `split_all.json` 真实子程序体的读写数据流 + 子程序/跨包调用编排 + 状态写 + CJK 源码注释(业务意图) → Kimi 合成【流程用途/输入→步骤→输出/状态流转/业务规则/变体差异/待确认】。质量判定 5 组(试样成形×6变体、力学试验、综合判定、质保书签发×7变体、质量设计)、生产调度 7 组(计划调整/排程/查询/确认、生产指令、厚板作业、板坯批处理×5变体)。产 S3-3 报告**第三部分**(marker `<!-- T3-3-3-COREPROCESS -->`；12 组明细 + 两族总览) + 12 卡片落远程 `s3-train/core_process/`，29.3K tokens。**关键发现**：质保书按订单/炉次/批次/产品四维出证(PR_MTC_FORM_*)、向 WSP 系统发数据(SQM_WSP_MTC_*)、状态 MTC_STS_CD=2申请；BSCH 端到端链 计划调整→排程→确认→生产指令→作业指令→批处理，浇次拆分/母坯计划不可调序等规则由注释确证。+12 单测(`test_core_process.py`，kb-ingest 全套 **205 通过**)。**局限**：变量赋值状态/动态 SQL 不可见(已标待确认)。
-- ⬜ **S3-3 未完**：T3-3-4 验证题≥15、T3-3-5 报告完稿。
+- ✅ **T3-3-4 验证题≥15**：`build_validation_questions.py` 出**21 道**场景验证题（状态流转6/业务规则5/追溯链路5/核心流程编排5，中13/难8），每题=场景题干+参考答案(锚定 T3-3-1/2/3 反推证据)+证据出处+BIZ 三档评分栏(正确/部分/错误，准确率=(正确+0.5部分)/总，目标≥90%)。**创新**：参考答案关键事实带 `grounding` 元数据，`--verify` 对真实库元数据(状态写/表结构/切分包)做**接地校验**——**26 条断言全命中/0 悬空**(状态写如 MTC_STS_CD=2/A7/PH1C、桥表 HEAT×SLAB47/PLT×SMP8、包 BSQM_MTC_ISSUE 等)，证参考答案非臆造。产 `docs/S3-3_业务流程验证题.md`(含接地校验附录)。+12 单测(kb-ingest 全套 **217 通过**)。**待 BIZ 评分签字**。
+- ⬜ **S3-3 未完**：T3-3-5 报告完稿(整合四部分 + BIZ 评分回填)。
 
 **Phase-1 就绪清单**：`docs/Phase1_验收就绪清单.md`（DoD 逐项三态核对 + 交付物 + TL 复现入口）。**明确 Phase-1 尚未可签字验收**——缺 S3-3 完整 + 三项人工评分 + ITM 签字。
 
-**仍待人工/未完**：SQL 人工终评≥85%、BIZ 抽检填写、断言纳基准库审核、ITM 签字；S3-3 T3-3-4~5；~8 超大过程二次切分；hybrid 泛化后缀去噪。
+**仍待人工/未完**：SQL 人工终评≥85%、BIZ 抽检填写、**S3-3 验证题 BIZ 评分≥90%**、断言纳基准库审核、ITM 签字；S3-3 T3-3-5 报告完稿；~8 超大过程二次切分；hybrid 泛化后缀去噪。
 
 **网关起法（复用）**：远程脚本 `bash /home/xintong/mes-s3-data/{sqlval,labels,statemachine,trace,cp}.sh`（各自含重启网关）；RAG 入库 `bash rag_ingest.sh`。均需 `kimikey` + `HF_ENDPOINT=https://hf-mirror.com`。
 
