@@ -6,7 +6,7 @@
 > ① 远程开发机+venv 就绪　② 真实库新 IP `10.30.10.111:25521/XEPDB1`（仅远程可达）+ 中韩英术语对照表
 > ③ S3-0 全套素材落远程持久目录 `/home/xintong/mes-s3-data/s3-0/` + 一键 `regen_s3_0.sh`（8步可复现）
 > ④ P0 表卡片 95 张（语义 87%）　⑤ 脱敏链路补全 7 类 + 素材审计认证「可外发」（0 命中）
-> **当前状态**：⭐ **S3-1/S3-2 批训练已跑完（2026-07-15）**——未决 #4 已闭环。见下方「增量⑥」。
+> **当前状态**：⭐ **S3-1/S3-2 批训练完成 + 验收前置全交付 + RAG 调优 + S3-3 状态机起步（2026-07-15）**。见「增量⑥/⑦」。已推送 origin + 远程同步（HEAD 见增量⑦）。
 
 ## ★ 2026-07-15 增量⑥：S3-1/S3-2 批训练已执行（调 Kimi 实训）
 
@@ -20,7 +20,31 @@
   - ✅ **补跑 1+13**：procs 1308→**1314**（剩 ~8 个 >4000 行 fallback 段待二次切分）。
   - ✅ **断言种子**(T3-4-2)：`build_assertion_seeds.py` 从 proc_parser 静态分析确定性产 **657 条**→`/assertions/{state-machine,sql-logic,api-behavior}`（Critical 89主键/High 171状态流转/Medium 397），已提交；纳基准库须 TL 审批。
   - ✅ **RAG 入库**：`ingest_s3_cards.py`（复用多语言 embedding，§14 合规）→95表+1314过程=**4339 chunk** 入集合 `mes_s3_understanding`（落 `scripts/kb-ingest/data/chromadb`，gitignored 可重生成）；过程召回 0.7+。**⚠️ gotcha**：远程内网不通 huggingface，须 `HF_ENDPOINT=https://hf-mirror.com` 拉模型（已缓存）。
-- **仍未决**：④ SQL 场景题库+**人工评分≥85%**(T3-1-4/5)、⑤ **BIZ 抽检**(T3-2-4)、rag_service 接 `mes_s3_understanding`、~8 超大过程二次切分。
+- （增量⑥的「仍未决」已在增量⑦全部推进，见下。）
+
+## ★ 2026-07-15 增量⑦：验收前置全交付 + RAG 检索调优 + S3-3 状态机（T3-3-1）
+
+> 本轮全部已提交并推送 origin + 远程逐文件核对同步，**HEAD `aab1555`**（+ 会话状态本次提交）。今日累计 Token ≈**3.95M**（训练3.83M + SQL验证66.8K + 标签26K + 状态机24K；TL 授权临时超 §12 至 8M，明日恢复）。
+
+**验收前置（承接增量⑥「仍未决」）**：
+- ✅ **SQL 场景验证**(T3-1-4/5)：`run_sql_validation.py`（6模块×5=30题锚定真实表→RAG召回→Kimi出SQL→规则自动初评）。产 `docs/S3-1_SQL验证报告.md`，自动初评均分 69.9/100；**人工语义终评≥85% 待 TL**（每题带评分列）。**暴露表选择偏弱**→触发下方 RAG 调优。
+- ✅ **BIZ 抽检单**(T3-2-4)：`build_biz_sample.py` 分层抽样 → `docs/S3-2_BIZ抽检抽样单.md`（40条，10模块，待 BIZ 填「正确/部分/错误」）。
+- ✅ **rag_service 查询端**：`retrieve_for_mes[_table/_proc]` 接 `mes_s3_understanding`，§14 合规（同模型+显式 query_embeddings），49 测试通过。
+
+**RAG 表召回调优（表级 Top-3 命中 ~1/10 → 7/10）**：
+- 锚点 chunk（`ingest_s3_cards.py`：每卡片加「表名+用途+字段中文语义」摘要块）+ 按表去重（`rag_service`）→ 5/10。集合重入库为 **5155 chunk**。
+- **标签驱动 hybrid**：`build_table_labels.py` 用 Kimi 抽95表中文名+别名→`src/ai-gateway/app/services/mes_table_labels.json`；`retrieve_for_mes` = 向量去重 + 标签 bigram 词法经 **RRF 融合**（无标签自动降级）→ **7/10**。剩3个真歧义长尾（钢卷/热卷、客户/产品「主数据」）。
+- 曾试朴素 bigram 全文 hybrid，反降到 2-3/10（样板话噪声），已弃；标签驱动才有效。
+
+**S3-3 业务流程理解（以过程为锚）起步**：
+- ✅ **T3-3-1 状态机反推**：`run_s3_state_machine.py` 从过程 `set_assignments`（列=字面量状态写入）反推 + SCO 代码字典(`glossary_code_mapping.csv`)解码 + Kimi 合成。产 `docs/S3-3_业务流程理解报告.md`（**34 状态字段**：质保书 MTC_STS_CD 2→9 由签发过程触发、计划 PLAN_ROLL_STS、炉次 HEAT_STS…）+ 34 卡片落远程 `s3-train/state_machine/`。**局限**：静态只捕字面量赋值，变量赋值状态不可见（已标「待确认」）。
+- ⬜ **S3-3 未完**：T3-3-2 追溯链路、T3-3-3 核心流程(BSQM/BSCH)、T3-3-4 验证题≥15、T3-3-5 报告完稿。
+
+**Phase-1 就绪清单**：`docs/Phase1_验收就绪清单.md`（DoD 逐项三态核对 + 交付物 + TL 复现入口）。**明确 Phase-1 尚未可签字验收**——缺 S3-3 完整 + 三项人工评分 + ITM 签字。
+
+**仍待人工/未完**：SQL 人工终评≥85%、BIZ 抽检填写、断言纳基准库审核、ITM 签字；S3-3 T3-3-2~5；~8 超大过程二次切分；hybrid 泛化后缀去噪。
+
+**网关起法（复用）**：远程脚本 `bash /home/xintong/mes-s3-data/{sqlval,labels,statemachine}.sh`（各自含重启网关）；RAG 入库 `bash rag_ingest.sh`。均需 `kimikey` + `HF_ENDPOINT=https://hf-mirror.com`。
 
 ## ★ 2026-07-14 增量⑤：脱敏链路已补全 + 训练素材审计认证「可外发」
 
