@@ -45,7 +45,7 @@
 | 卡片/术语/字典入知识库可 RAG | ✅ | `mes_s3_understanding` 5155 chunk；`rag_service.retrieve_for_mes[_table/_proc]` |
 | 断言种子 ≥3×P0 入 /assertions/ | ✅ | 657 条（Critical 89 主键 / High 171 状态流转 / Medium 397 写副作用+表关系），覆盖 149 资产 |
 | 全程脱敏（无泄漏 + 审计完整）| ✅ | `docs/desensitize_audit_report.md` 0 命中；网关脱敏门；Gitleaks 规则含密钥忽略 |
-| 系统理解总报告经 ITM 签字 | ⬜ **未出/未签** | 待 S3-3 + 人工评分后汇总 |
+| 系统理解总报告经 ITM 签字 | ⏳ **报告+评审材料已备、待签** | 总报告 `docs/MES真实系统理解总报告.md` + 评审会材料 `docs/S3-4-4_Phase1评审会材料.md`（议程/DoD/决议/签字区）；待评审会评分回填 + 签字 |
 | Token 在预算内，P1/P2 排期 | ✅ | Sprint3 合计 3.99M（07-15 批训练 TL 授权临时 8M 闸内，07-16 回落 51K）；P1/P2 排期已出 `docs/S3-4-3_Token复盘与P1P2排期.md`（T3-4-3）|
 
 ---
