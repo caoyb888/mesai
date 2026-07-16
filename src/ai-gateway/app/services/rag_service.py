@@ -58,17 +58,27 @@ class RagService:
             log.error("ChromaDB/Embedding 初始化失败：%s", e)
             raise
         self._cache: dict = {}
-        self._labels = self._load_labels()   # {表名: {label, aliases}} 供 hybrid 词法匹配
+        # {表名: {label, aliases}} / {父过程名: {label, aliases}} 供 hybrid 词法匹配
+        self._labels = self._load_labels("mes_table_labels.json")
+        self._proc_labels = self._load_labels("mes_proc_labels.json")
 
     @staticmethod
-    def _load_labels() -> dict:
-        """加载表中文标签（build_table_labels.py 产），失败则空 → hybrid 降级纯向量"""
+    def _load_labels(filename: str = "mes_table_labels.json") -> dict:
+        """加载中文标签（build_table_labels/build_proc_labels 产），失败则空 → hybrid 降级纯向量"""
         try:
-            p = Path(__file__).parent / "mes_table_labels.json"
+            p = Path(__file__).parent / filename
             return json.loads(p.read_text(encoding="utf-8"))
         except Exception as e:
-            log.warning("表标签加载失败，hybrid 降级纯向量：%s", e)
+            log.warning("标签加载失败（%s），hybrid 降级纯向量：%s", filename, e)
             return {}
+
+    # 二次切分片段 stem <PKG>.<PROC>_pNN → 父过程 <PKG>.<PROC>（非片段原样返回）
+    _PNN_RE = re.compile(r"_p\d+$", re.I)
+
+    @classmethod
+    def _proc_parent(cls, asset: str) -> str:
+        """把过程卡片身份（可能是片段）归并到父过程，供 proc 父级分组去重与标签匹配"""
+        return cls._PNN_RE.sub("", asset or "")
 
     @staticmethod
     def _bigrams(s: str) -> set:
@@ -76,28 +86,35 @@ class RagService:
         s = re.sub(r"[\s\W_]+", "", s or "")
         return {s[i:i + 2] for i in range(len(s) - 1)} if len(s) >= 2 else ({s} if s else set())
 
-    def _label_bigrams(self) -> dict:
-        """{表名: 标签+别名+表名 的 bigram 集}"""
-        if "lab" not in self._cache:
-            self._cache["lab"] = {
+    def _label_bigrams(self, kind: str = "table") -> dict:
+        """{标签键: 标签+别名+键 的 bigram 集}（table→表名键；proc→父过程键）"""
+        ck = f"lab_{kind}"
+        if ck not in self._cache:
+            labels = self._proc_labels if kind == "proc" else self._labels
+            self._cache[ck] = {
                 t: self._bigrams(o.get("label", "") + " " + " ".join(o.get("aliases", [])) + " " + t)
-                for t, o in self._labels.items()}
-        return self._cache["lab"]
+                for t, o in labels.items()}
+        return self._cache[ck]
 
-    def _table_anchors(self) -> dict:
-        """{表名: 锚点文本}（懒加载，供仅词法命中的表构造返回文档）"""
-        if "anc" not in self._cache:
+    def _anchors(self, kind: str = "table") -> dict:
+        """{身份键: 锚点文本}（懒加载，供仅词法命中项构造返回文档）。
+        table→表名键；proc→父过程键（片段锚点按父归并，取先见的 :0 chunk）。"""
+        ck = f"anc_{kind}"
+        if ck not in self._cache:
             anc = {}
             try:
                 col = self._client.get_collection(COLLECTION_MES_S3)
-                got = col.get(where={"chunk_type": "s3_table"}, include=["documents", "metadatas"])
+                got = col.get(where={"chunk_type": f"s3_{kind}"}, include=["documents", "metadatas"])
                 for cid, doc, md in zip(got["ids"], got["documents"], got["metadatas"]):
                     if cid.endswith(":0"):
-                        anc[md["source_file"].replace(".md", "")] = doc
+                        key = md["source_file"].replace(".md", "")
+                        if kind == "proc":
+                            key = self._proc_parent(key)
+                        anc.setdefault(key, doc)   # 同父多片段取先见锚点
             except Exception as e:
-                log.warning("锚点加载失败：%s", e)
-            self._cache["anc"] = anc
-        return self._cache["anc"]
+                log.warning("锚点加载失败（%s）：%s", kind, e)
+            self._cache[ck] = anc
+        return self._cache[ck]
 
     def retrieve(
         self,
@@ -170,38 +187,42 @@ class RagService:
 
         :param kind: "table" 只表卡片 / "proc" 只过程卡片 / None 混检
 
-        表检索策略（治小向量模型对近义钢厂术语区分差）：
-          ① 向量：锚点 chunk + 按卡片去重 → 向量排序
-          ② 词法：查询与「表中文标签+别名」做字符 bigram 重叠（干净短标签，高精度）→ 词法排序
-          ③ RRF 融合两路排序，返回 Top-N 不同表
-        非表 kind 或无标签时，退化为向量去重。
+        检索策略（治小向量模型对近义钢厂术语区分差）：
+          ① 向量：按身份去重 → 向量排序（table→表名；proc→**父过程**，二次切分片段按父归并）
+          ② 词法：查询与「中文标签+别名」做字符 bigram 重叠（干净短标签，高精度）→ 词法排序
+          ③ RRF 融合两路排序，返回 Top-N 不同身份
+        table 用表标签、proc 用过程标签；无对应标签或混检（kind=None）时退化为向量去重。
         """
         where = {"chunk_type": f"s3_{kind}"} if kind in ("table", "proc") else None
         n = top_n or get_settings().rag_top_n
+        is_proc = kind == "proc"
+        labels = self._proc_labels if is_proc else self._labels
 
-        # ① 向量（按卡片去重，key=表名）
+        # ① 向量（按身份去重：proc 归并到父过程，避免同过程多片段挤占）
         raw = self.retrieve(question, COLLECTION_MES_S3, top_n=max(n * 8, 30), where=where)
         vec_rank: dict = {}
         best_doc: dict = {}
         for d in raw:
             t = (d.metadata.get("source_file") or "").replace(".md", "")
+            if is_proc:
+                t = self._proc_parent(t)
             if t and t not in vec_rank:
                 vec_rank[t] = len(vec_rank)
                 best_doc[t] = d
 
-        if kind != "table" or not self._labels:
+        if kind not in ("table", "proc") or not labels:
             return list(best_doc.values())[:n]
 
-        # ② 词法（表标签 bigram 重叠，阈值≥2 抑噪）
+        # ② 词法（标签 bigram 重叠，阈值≥2 抑噪）
         qb = self._bigrams(question)
         lex_scored = sorted(
-            ((t, len(qb & bg)) for t, bg in self._label_bigrams().items() if len(qb & bg) >= 2),
+            ((t, len(qb & bg)) for t, bg in self._label_bigrams(kind).items() if len(qb & bg) >= 2),
             key=lambda x: -x[1])
         lex_rank = {t: i for i, (t, _) in enumerate(lex_scored)}
 
         # ③ RRF 融合
         K, BIG = 60, 10 ** 6
-        anchors = self._table_anchors()
+        anchors = self._anchors(kind)
         cand = set(vec_rank) | set(lex_rank)
         fused = sorted(cand, key=lambda t: -(1.0 / (K + vec_rank.get(t, BIG))
                                              + 1.0 / (K + lex_rank.get(t, BIG))))
@@ -211,7 +232,7 @@ class RagService:
                 out.append(best_doc[t])
             elif t in anchors:   # 仅词法命中：用锚点文本构造结果
                 out.append(RagDocument(doc_id=t, content=anchors[t], distance=0.5,
-                                       metadata={"source_file": f"{t}.md", "chunk_type": "s3_table"}))
+                                       metadata={"source_file": f"{t}.md", "chunk_type": f"s3_{kind}"}))
         return out
 
     def retrieve_for_mes_table(self, question: str, top_n: Optional[int] = None) -> list[RagDocument]:

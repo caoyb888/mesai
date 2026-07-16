@@ -1,0 +1,163 @@
+{
+ "BSQM_CERTIFI_RESULT_PLATE_SC.P_SEARCH_RSQM0101_TITLE2": {
+  "label": "钢材化学成分查询",
+  "aliases": [
+   "化学成分测试结果",
+   "钢材编号化学成分",
+   "MTC_NO成分查询",
+   "动态化学成分检索",
+   "成分测试结果输出"
+  ]
+ },
+ "BSQM_CERTIFI_RESULT_PLATE_SC.P_SEARCH_RSQM0101_TITLE3": {
+  "label": "材料化学成分查询",
+  "aliases": [
+   "化学成分测试结果",
+   "材料编号查询",
+   "动态SQL查询",
+   "材料类型查询",
+   "化学成分数据检索"
+  ]
+ },
+ "BSQM_CERTIFI_RESULT_PLATE_SC.P_SEARCH_RSQM0305_SUB": {
+  "label": "质保书数据查询",
+  "aliases": [
+   "材料编号查询",
+   "生产信息检索",
+   "机械测试结果",
+   "质保书生成",
+   "质量检查报告"
+  ]
+ },
+ "BSQM_CERTIFI_RESULT_PLATE_SC.P_SEARCH_RSQM0305_TITLE": {
+  "label": "质保书标题查询",
+  "aliases": [
+   "质保书",
+   "质保书报告",
+   "证书标题",
+   "材料测试信息查询",
+   "材料属性查询",
+   "测试结果检索"
+  ]
+ },
+ "BSQM_INF_LIMS_MEC_TEST_SPEC.PR_SEND_MEC_TEST": {
+  "label": "机械测试数据发送",
+  "aliases": [
+   "机械测试委托",
+   "机械测试结果处理",
+   "LIMS系统数据同步",
+   "机械测试信息更新",
+   "样品测试数据发送"
+  ]
+ },
+ "BSQM_MECH_HEAD.PR_SELECT_ELEM1": {
+  "label": "化学成分质量标准查询",
+  "aliases": [
+   "材料化学成分检索",
+   "质量标准数据查询",
+   "化学成分数据获取",
+   "材料质量标准检索",
+   "化学成分标准查询"
+  ]
+ },
+ "BSQM_MECH_HEAD.PR_SELECT_ELEM3": {
+  "label": "化学成分质量控制查询",
+  "aliases": [
+   "化学成分数据检索",
+   "质量控制化学元素",
+   "物料编号化学成分",
+   "钢卷化学成分查询",
+   "化学成分最小最大值"
+  ]
+ },
+ "BSQM_MECH_PC_TEST.PR_MECH_ITEM_JDG": {
+  "label": "机械测试项结果判断",
+  "aliases": [
+   "机械测试结果处理",
+   "测试结果判断",
+   "机械项目测试",
+   "测试结果更新",
+   "机械测试逻辑判断"
+  ]
+ },
+ "BSQM_MECH_PC_TEST_SSM.PR_MECH_ITEM_JDG": {
+  "label": "机械测试结果判断",
+  "aliases": [
+   "机械测试项判断",
+   "测试结果更新",
+   "机械测试数据处理",
+   "测试结果判断",
+   "机械测试结果处理"
+  ]
+ },
+ "BSQM_MECH_TEST.PR_MECH_ITEM_JDG": {
+  "label": "机械测试结果判断",
+  "aliases": [
+   "机械性能测试",
+   "测试结果处理",
+   "机械测试项判断",
+   "样本测试结果",
+   "测试数据更新"
+  ]
+ },
+ "BSQM_SMP_TRK.PR_SEARCH_STOCK": {
+  "label": "库存信息查询",
+  "aliases": [
+   "库存检索",
+   "产品组库存查询",
+   "库存搜索",
+   "材料编号检索",
+   "热处理库存查询"
+  ]
+ },
+ "BSQM_TC7803_SEND_MEC_TEST.PR_SEND_MEC_TEST": {
+  "label": "钢材机械测试数据处理",
+  "aliases": [
+   "机械测试结果处理",
+   "初验复验指示下达",
+   "测试结果发送LIMS",
+   "机械测试状态更新",
+   "钢材测试数据管理"
+  ]
+ },
+ "BSQM_TC7803_SEND_MEC_TEST_SSM.PR_SEND_MEC_TEST": {
+  "label": "机械测试数据处理",
+  "aliases": [
+   "机械测试结果处理",
+   "测试数据发送",
+   "样品机械测试",
+   "LIMS数据交互",
+   "样品状态验证"
+  ]
+ },
+ "BSQM_TOT_JDG_RSLT.PR_SEARCH_TOT_JDG_RSLT1": {
+  "label": "钢铁厂产品总判定查询",
+  "aliases": [
+   "产品质量判断",
+   "钢铁厂产品判定",
+   "产品判定结果汇总",
+   "产品判定信息检索",
+   "产品判定结果查询"
+  ]
+ },
+ "BSQM_UNJDG_PROD.PR_SEARCH_INFO": {
+  "label": "产品信息查询",
+  "aliases": [
+   "产品数据检索",
+   "产品信息搜索",
+   "产品查询",
+   "产品详细信息检索",
+   "产品信息筛选"
+  ]
+ },
+ "BSSD_ORD_LINE_INFO.PR_SAVE_SSD_ORD_LINE_INQ": {
+  "label": "订单明细信息保存",
+  "aliases": [
+   "订单信息更新",
+   "订单明细维护",
+   "订单行数据保存",
+   "订单行信息处理",
+   "订单行状态更新"
+  ]
+ }
+}
