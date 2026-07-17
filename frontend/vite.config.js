@@ -15,8 +15,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // 代理 /api/* 请求到 Spring Boot 后端（去掉 /api 前缀）
+      // 目标地址可用 VITE_API_TARGET 覆盖（如共享机上后端非默认 8080 端口时），默认 localhost:8080
       '/api': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8080',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
