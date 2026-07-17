@@ -108,3 +108,53 @@ class DemoResponse(BaseModel):
     context_docs: list[ContextDoc] = Field(default_factory=list, description="使用的知识库上下文片段")
     tokens_used: int
     response_time_ms: int
+
+
+# ── MES 数据问答接口模型（真实 MES S3 理解知识库）─────────────────
+
+class MesQaRequest(BaseModel):
+    """
+    MES 数据问答请求。
+
+    面向真实 MES 库（钢板/卷材钢厂）的表结构与存储过程问答：
+    先从 S3 理解卡片集合 RAG 检索（标签驱动 hybrid），再由 LLM 基于检索到的
+    真实表/字段/过程作答，严格接地防臆造。
+    """
+    question: str = Field(..., min_length=5, max_length=500, description="自然语言业务问题")
+    kind: str = Field(
+        "auto",
+        description="检索范围：auto（表+过程混合，默认）/ table（仅表卡片）/ proc（仅存储过程卡片）",
+    )
+    top_n: Optional[int] = Field(
+        None, ge=1, le=10, description="RAG 检索条数，不传则用配置默认（预算降级时自动缩减）",
+    )
+    task_no: str = Field(
+        "REQ-MES-AI-20260716-001",
+        description="需求单编号，用于 Token 成本归集，格式 REQ-MES-AI-YYYYMMDD-NNN",
+    )
+    caller: str = Field("mes_qa", description="调用来源模块标识")
+    max_tokens: Optional[int] = Field(800, ge=64, le=4096, description="最大生成 Token 数")
+    temperature: float = Field(0.2, ge=0.0, le=1.0, description="生成温度，默认 0.2（问答场景求稳）")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {"question": "热轧钢卷的轧制实绩数据保存在哪张表？主键是什么？", "kind": "table"},
+                {"question": "质保书是通过哪些存储过程签发的？主流程是怎样的？", "kind": "proc"},
+                {"question": "板坯是按炉次管理的吗？相关核心表有哪些？", "kind": "auto"},
+            ]
+        }
+
+
+class MesQaResponse(BaseModel):
+    """MES 数据问答响应"""
+    question: str
+    kind: str = Field(..., description="实际生效的检索范围（auto/table/proc）")
+    answer: str = Field(..., description="AI 基于知识库上下文生成的回答")
+    context_docs: list[ContextDoc] = Field(
+        default_factory=list, description="本次作答引用的知识库上下文片段（含相关度）",
+    )
+    provider: str = Field(..., description="实际使用的 AI 提供商")
+    model: str = Field(..., description="实际使用的模型名称")
+    tokens_used: int = Field(..., description="本次调用消耗 Token 总数")
+    response_time_ms: int
