@@ -6,7 +6,7 @@ AI 网关请求/响应数据模型
 """
 
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Message(BaseModel):
@@ -72,8 +72,8 @@ class DemoRequest(BaseModel):
         description="生成模式：sql（查询SQL）/ dml（变更SQL）/ fe_component（Vue组件）",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "question": "查询过去7天内所有状态为OPEN的工单，按创建时间倒序排列，只取前20条",
@@ -89,6 +89,7 @@ class DemoRequest(BaseModel):
                 },
             ]
         }
+    )
 
 
 class ContextDoc(BaseModel):
@@ -136,14 +137,15 @@ class MesQaRequest(BaseModel):
     max_tokens: Optional[int] = Field(800, ge=64, le=4096, description="最大生成 Token 数")
     temperature: float = Field(0.2, ge=0.0, le=1.0, description="生成温度，默认 0.2（问答场景求稳）")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {"question": "热轧钢卷的轧制实绩数据保存在哪张表？主键是什么？", "kind": "table"},
                 {"question": "质保书是通过哪些存储过程签发的？主流程是怎样的？", "kind": "proc"},
                 {"question": "板坯是按炉次管理的吗？相关核心表有哪些？", "kind": "auto"},
             ]
         }
+    )
 
 
 class MesQaResponse(BaseModel):
