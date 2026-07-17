@@ -24,14 +24,24 @@
 
 **活网关实测**：table→`SHR_HCOIL_ROLLING_RSLT`/主键`COIL_NO`(1709 tok)；auto→表(SPR_HEAT_FCE_RSLT/SMS_HEAT)+过程交织厚答(2138 tok)；proc top_n=3→标签近的 RSQM0305_TITLE 被挤出，模型答「知识库中未检索到」(防臆造生效)。本轮问答累计计入预算 6566 token，脱敏门通过、默认 300 万闸无降级。
 
+### 3. 提交 / 推送 / 远程验证 ✅
+
+| 项 | 内容 |
+|----|----|
+| `cb2ec17` | feat: 新增 `/v1/ai/mes-qa` 端点（`mes_qa.py` 路由 + 2 模型 + 路由注册 + 8 单测） |
+| `322c8cb` | docs: L1~L4 验收集 v0.1（75 题）+ 指标口径表 v0.1（17 指标）+ 本快照 |
+| `8d97c85` | refactor: `models.py` `class Config` → `ConfigDict`（消除 Pydantic V2 弃用告警，行为不变） |
+
+按项目惯例 feat / docs / refactor 分开提交，均属 `REQ-MES-AI-20260716-001`，已推送 `origin/feature/real-mes-integration`。**远程机全量 pytest 复跑 61 passed**（refactor 后仅剩无关的 `pytest_asyncio` fixture-scope 提示，两条 `PydanticDeprecatedSince20` 已消除）。
+
 ---
 
 ## 二、当前系统状态
 
 - **远程 gateway**：运行**新代码**（含 mes-qa 路由），kimi provider / moonshot-v1-32k，默认预算 300 万，`127.0.0.1:8000`。
 - **集合 `mes_s3_understanding`**：14,410 chunk（P0+P1 表+P1 过程+L2 片段），ChromaDB `scripts/kb-ingest/data/chromadb`（168M）。
-- **本机工作区**：mes-qa 4 文件已改；已 scp 到远程并跑测/活测通过。**尚未 git commit/push**。
-- **未追踪文档**（历史遗留，非本次）：`docs/L1L4_业务问答验收集_v0.1.{md,jsonl}`、`docs/指标口径表_v0.1.{md,csv}`（数据问答机器人 v0.1 草稿，待业务方确认）。
+- **Git 三方同步**：本机 / 远程 / origin 均在 `8d97c85`，工作区 clean（远程已 `git reset --hard origin` 回干净态）。
+- **验收/口径文档**（草稿，待业务方确认）：`docs/L1L4_业务问答验收集_v0.1.{md,jsonl}`、`docs/指标口径表_v0.1.{md,csv}` 已随 `322c8cb` 入库。
 
 ---
 
@@ -55,12 +65,11 @@
 
 ## 四、未决事项（承 Session_State_2026-07-16 §四，均非阻塞）
 
-1. **mes-qa 变更提交**：`[REQ-MES-AI-20260716-001] feat: 新增 MES 数据问答端点 /v1/ai/mes-qa`（待用户确认 commit/push）。
-2. **proc 长尾**：top_n 收紧时质保书系(RSQM0305_TITLE)易被挤出 → 提高默认 top_n 或调 proc 标签。
-3. **人手承认**：P0+P1 断言种子 1637 条 TL 审核；SQL 人工终评≥85%；BIZ 抽检/验证题评分；ITM 脱敏形式签字。
-4. **P2 调优**：空表薄卡召回增强；`p1_tables.txt` 残留 SCOAPUSER. 前缀剔除；断言生成器 P0 重复 ID 整理。
-5. **数据问答机器人 v0.1**（未追踪 4 文档）定位：是否纳入本需求单或另开需求单。
+1. **proc 长尾**：top_n 收紧时质保书系(RSQM0305_TITLE)易被挤出 → 提高默认 top_n 或调 proc 标签。
+2. **人手承认**：P0+P1 断言种子 1637 条 TL 审核；SQL 人工终评≥85%；BIZ 抽检/验证题评分；ITM 脱敏形式签字。
+3. **P2 调优**：空表薄卡召回增强；`p1_tables.txt` 残留 SCOAPUSER. 前缀剔除；断言生成器 P0 重复 ID 整理。
+4. **验收/口径 v0.1 归属**：`L1L4_业务问答验收集`、`指标口径表`（已入库）是否纳入本需求单验收范围或另开需求单，待业务方确认。
 
 ---
 
-*会话状态快照 · 2026-07-17 · 端到端问答演示 + /v1/ai/mes-qa 端点配线（61 测通过，未提交）*
+*会话状态快照 · 2026-07-17 · 端到端问答演示 + /v1/ai/mes-qa 端点配线 → 提交推送 + 远程 61 测通过 + ConfigDict 重构（三方同步 8d97c85）*
