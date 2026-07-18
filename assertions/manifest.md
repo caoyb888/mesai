@@ -21,3 +21,13 @@
 - 说明：demo 垃圾表 `YOUR_TABLE_NAME` 已从清单剔除，与训练卡片一致。
 
 **P0+P1 合计 1637 条**（Critical 324 / High 451 / Medium 862）。
+
+## 功能契约断言 · MES 取数（mes-sql）· 需求单 REQ-MES-AI-20260716-001
+
+- **5 条**：category=code-generation，ID `AS-CG-000N`（`source: feature-contract`，非 proc 静态分析）
+- 级别：Critical 3 / High 2
+- 覆盖：仅只读 SELECT（AS-CG-0001）、禁 SELECT *（0002）、接地防臆造（0003）、
+  只读数据源不写（0004）、ROWNUM 行数封顶（0005）
+- 文件：`code-generation/mes-sql-generation_seeds.jsonl`
+- 状态：**候选**，须技术负责人审核后纳入基准库（CLAUDE.md §7.3）；对应 `/v1/ai/mes-sql` 端点与
+  `SqlSafetyValidator`，其中 0001/0002/0005 已有对应 JUnit 用例（`SqlSafetyValidatorTest` / `MesSqlServiceTest`）。

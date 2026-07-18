@@ -21,18 +21,19 @@ spring:
       max-lifetime: 1800000
       connection-test-query: SELECT 1
 
-  # ── MES 系统只读数据源（PostgreSQL 15.x，只读账号）─────────────
-  # 安全约束：禁止执行任何写操作，账号为 itsm_readonly
+  # ── MES 系统只读数据源（真实 MES 库，Oracle，只读账号）─────────────
+  # 安全约束：禁止执行任何写操作，账号为 mes_readonly（只读）；由 MesReadOnlyDataSourceConfig 装配。
+  # 治理：MES_DB_URL 未配置时不创建数据源，取数接口自动降级为“仅生成 SQL 不执行”。
   mes:
     datasource:
-      url: ${MES_DB_URL}
-      username: ${MES_DB_USER}
-      password: ${MES_DB_PASS}
-      driver-class-name: org.postgresql.Driver
+      url: ${MES_DB_URL:}
+      username: ${MES_DB_USER:}
+      password: ${MES_DB_PASS:}
+      driver-class-name: ${MES_DB_DRIVER:oracle.jdbc.OracleDriver}
       hikari:
-        pool-name: HikariPool-MesDB-Test
+        pool-name: HikariPool-MesDB-ReadOnly
         maximum-pool-size: 5
-        minimum-idle: 2
+        minimum-idle: 1
         connection-timeout: 10000
         idle-timeout: 300000
         read-only: true

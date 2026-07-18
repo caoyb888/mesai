@@ -160,3 +160,53 @@ class MesQaResponse(BaseModel):
     model: str = Field(..., description="实际使用的模型名称")
     tokens_used: int = Field(..., description="本次调用消耗 Token 总数")
     response_time_ms: int
+
+
+# ── MES 取数（NL → Oracle SELECT）接口模型 ─────────────────────────
+
+class MesSqlRequest(BaseModel):
+    """
+    MES 取数请求：自然语言 → Oracle 只读 SELECT 生成。
+
+    先从 S3 理解卡片集合 RAG 检索真实表/字段/存储过程，再由 LLM 严格接地
+    生成 Oracle 方言 SELECT（只读、禁 SELECT *、禁臆造表名/字段名）。
+    SQL 的安全校验与只读执行在 Spring Boot 后端完成，网关侧只负责生成。
+    """
+    question: str = Field(..., min_length=5, max_length=500, description="自然语言取数需求")
+    top_n: Optional[int] = Field(
+        None, ge=1, le=10, description="RAG 检索条数，不传则用配置默认（预算降级时自动缩减）",
+    )
+    task_no: str = Field(
+        "REQ-MES-AI-20260716-001",
+        description="需求单编号，用于 Token 成本归集，格式 REQ-MES-AI-YYYYMMDD-NNN",
+    )
+    caller: str = Field("mes_sql", description="调用来源模块标识")
+    max_tokens: Optional[int] = Field(1200, ge=64, le=4096, description="最大生成 Token 数")
+    temperature: float = Field(0.1, ge=0.0, le=1.0, description="生成温度，默认 0.1（取数场景求确定性）")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"question": "查询最近一个月热轧钢卷的轧制实绩，包含卷号、炉次号、轧制日期"},
+                {"question": "统计每个牌号的板坯数量，按数量倒序"},
+            ]
+        }
+    )
+
+
+class MesSqlResponse(BaseModel):
+    """MES 取数响应：生成的 Oracle SELECT + 接地元数据"""
+    question: str
+    generated: bool = Field(..., description="是否成功生成 SQL（false 表示知识库依据不足，见 unanswerable_reason）")
+    sql: str = Field("", description="生成的 Oracle 只读 SELECT（未生成时为空串）")
+    explanation: str = Field("", description="对查询逻辑、涉及表/字段、关键条件的中文说明")
+    referenced_tables: list[str] = Field(default_factory=list, description="SQL 引用的表名（英文，须来自知识库上下文）")
+    referenced_columns: list[str] = Field(default_factory=list, description="SQL 引用的关键字段名（英文）")
+    unanswerable_reason: Optional[str] = Field(None, description="未能生成 SQL 的原因（知识库无对应表/字段时填写）")
+    context_docs: list[ContextDoc] = Field(
+        default_factory=list, description="本次生成引用的知识库上下文片段（含相关度）",
+    )
+    provider: str = Field(..., description="实际使用的 AI 提供商")
+    model: str = Field(..., description="实际使用的模型名称")
+    tokens_used: int = Field(..., description="本次调用消耗 Token 总数")
+    response_time_ms: int

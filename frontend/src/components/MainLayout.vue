@@ -61,6 +61,10 @@ async function handleLogout() {
           <el-icon><ChatDotRound /></el-icon>
           <template #title>MES 数据问答</template>
         </el-menu-item>
+        <el-menu-item index="/mes-sql">
+          <el-icon><Coin /></el-icon>
+          <template #title>MES 取数（生成 SQL）</template>
+        </el-menu-item>
       </el-menu>
 
       <div class="sidebar-collapse" @click="isCollapse = !isCollapse">

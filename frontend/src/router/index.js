@@ -32,6 +32,12 @@ const routes = [
         name: 'MesQa',
         component: () => import('@/views/mes-qa/MesQaPage.vue'),
         meta: { title: 'MES 数据问答 - 芯智云匠', requiresAuth: true }
+      },
+      {
+        path: 'mes-sql',
+        name: 'MesSql',
+        component: () => import('@/views/mes-sql/MesSqlPage.vue'),
+        meta: { title: 'MES 取数（AI 生成 SQL）- 芯智云匠', requiresAuth: true }
       }
     ]
   },
