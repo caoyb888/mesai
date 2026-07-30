@@ -24,10 +24,11 @@
 
 ## 功能契约断言 · MES 取数（mes-sql）· 需求单 REQ-MES-AI-20260716-001
 
-- **6 条**：category=code-generation，ID `AS-CG-000N`（`source: feature-contract`，非 proc 静态分析）
-- 级别：Critical 3 / High 3
+- **8 条**：category=code-generation，ID `AS-CG-000N`（`source: feature-contract`，非 proc 静态分析）
+- 级别：Critical 4 / High 4
 - 覆盖：仅只读 SELECT（AS-CG-0001）、禁 SELECT *（0002）、接地防臆造（0003）、
-  只读数据源不写（0004）、ROWNUM 行数封顶（0005）、VARCHAR2(14) 时间字段字符串比较（0006，REQ-MES-AI-20260730-001）
+  只读数据源不写（0004）、ROWNUM 行数封顶（0005）、VARCHAR2(14) 时间字段字符串比较（0006，REQ-MES-AI-20260730-001）、
+  字段名逐字一致禁近似改写（0007，REQ-MES-AI-20260730-001）、代码字段禁中文标签过滤（0008，REQ-MES-AI-20260730-001）
 - 文件：`code-generation/mes-sql-generation_seeds.jsonl`
 - 状态：**候选**，须技术负责人审核后纳入基准库（CLAUDE.md §7.3）；对应 `/v1/ai/mes-sql` 端点与
   `SqlSafetyValidator`，其中 0001/0002/0005 已有对应 JUnit 用例（`SqlSafetyValidatorTest` / `MesSqlServiceTest`）。
