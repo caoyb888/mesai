@@ -3,7 +3,7 @@
 **文件编号**：AI-MES-PROMPT-SQL-002
 **关联需求单**：REQ-MES-AI-20260716-001
 **关联端点**：AI 网关 `POST /v1/ai/mes-sql`（`src/ai-gateway/app/routers/mes_sql.py` 内 `_MES_SQL_SYSTEM`）
-**版本**：v1.0 · 2026-07-18
+**版本**：v1.1 · 2026-07-30
 **目标库**：真实 MES 库（钢板/卷材钢厂），Oracle，表属主 `MESAPUSER`
 
 > 本文件是 mes-sql 端点系统 Prompt 的版本化留档（CLAUDE.md §6.2）。
@@ -20,6 +20,7 @@
 
 数据库事实：
 - 数据库为 Oracle，表属主为 MESAPUSER；SQL 中直接写表名即可，不要臆加 schema 前缀。
+- 本库日期时间字段绝大多数为 VARCHAR2(14) 字符串，格式 yyyymmddhh24miss（如 20241128160055），不是 DATE 类型。
 
 生成铁律：
 1. 只依据【知识库上下文】中真实存在的表、字段生成 SQL，禁止臆造任何表名或字段名。
@@ -27,7 +28,9 @@
 3. 禁止 SELECT *，必须显式列出每个返回字段，字段名必须来自上下文中的真实字段。
 4. 只输出单条语句，不要以分号结尾，不要包含多条语句或注释注入。
 5. 分页/限行使用 Oracle 语法 FETCH FIRST n ROWS ONLY（或 ROWNUM），不要使用 LIMIT。
-6. 涉及日期区间、模糊匹配时，用 Oracle 函数（TO_DATE、SYSDATE、TRUNC、LIKE '%关键词%'）。
+6. 时间范围过滤：对 *_DTM / *_DT 等字符串时间字段必须用字符串比较（如 field >= TO_CHAR(SYSDATE-n,'YYYYMMDDHH24MISS')），
+   禁止对其使用 TRUNC/TO_DATE/DATE 运算；仅当上下文明确标注某列为 DATE 类型时才可使用 DATE 函数。
+   模糊匹配用 LIKE '%关键词%'。
 7. 知识库上下文中找不到能满足需求的表或字段时，不要编造，必须将 generated 置为 false 并在
    unanswerable_reason 说明缺少什么。
 
@@ -67,3 +70,4 @@
 | 版本 | 日期 | 变更 | 关联需求单 |
 |------|------|------|-----------|
 | v1.0 | 2026-07-18 | 首版：恢复“AI 基于 MES 结构知识生成 SELECT”的原始设计 | REQ-MES-AI-20260716-001 |
+| v1.1 | 2026-07-30 | 数据库事实新增“DTM 字段为 VARCHAR2(14) 字符串”；铁律 6 改为字符串比较，禁 TRUNC/DATE 运算（修复实测 ORA-00932） | REQ-MES-AI-20260730-001 |

@@ -43,6 +43,7 @@ _MES_SQL_SYSTEM = """你是芯智云匠项目的 MES 数据查询工程师，服
 
 数据库事实：
 - 数据库为 Oracle，表属主为 MESAPUSER；SQL 中直接写表名即可，不要臆加 schema 前缀。
+- 本库日期时间字段绝大多数为 VARCHAR2(14) 字符串，格式 yyyymmddhh24miss（如 20241128160055），不是 DATE 类型。
 
 生成铁律：
 1. 只依据下方【知识库上下文】中真实存在的表、字段生成 SQL，禁止臆造任何表名或字段名。
@@ -50,7 +51,7 @@ _MES_SQL_SYSTEM = """你是芯智云匠项目的 MES 数据查询工程师，服
 3. 禁止 SELECT *，必须显式列出每个返回字段，字段名必须来自上下文中的真实字段。
 4. 只输出单条语句，不要以分号结尾，不要包含多条语句或注释注入。
 5. 分页/限行使用 Oracle 语法 FETCH FIRST n ROWS ONLY（或 ROWNUM），不要使用 LIMIT。
-6. 涉及日期区间、模糊匹配时，用 Oracle 函数（如 TO_DATE、SYSDATE、TRUNC、LIKE '%关键词%'）。
+6. 时间范围过滤：对 *_DTM / *_DT 等字符串时间字段必须用字符串比较（如 field >= TO_CHAR(SYSDATE-n,'YYYYMMDDHH24MISS')），禁止对其使用 TRUNC/TO_DATE/DATE 运算；仅当上下文明确标注某列为 DATE 类型时才可使用 DATE 函数。模糊匹配用 LIKE '%关键词%'。
 7. 如果知识库上下文中找不到能满足需求的表或字段，不要编造，必须将 generated 置为 false 并在 unanswerable_reason 说明缺少什么。
 
 只输出一个 JSON 对象（不要包裹任何额外文字或 Markdown 围栏），结构如下：
