@@ -7,6 +7,7 @@ import com.xingtong.mesai.module.demo.vo.SqlExecutionResult;
 import com.xingtong.mesai.module.messql.dto.MesSqlRequest;
 import com.xingtong.mesai.module.messql.util.SqlSafetyValidator;
 import com.xingtong.mesai.module.messql.util.SqlSafetyValidator.SqlSafetyResult;
+import com.xingtong.mesai.module.messql.util.SqlSchemaValidator;
 import com.xingtong.mesai.module.messql.vo.MesSqlVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -106,7 +107,8 @@ public class MesSqlService {
 
         // 执行阶段：仅在开启执行 + 已生成 SQL 时进入校验/执行
         if (req.isExecuteSql()) {
-            vo.setExecutionResult(runIfSafe(vo.isGenerated(), vo.getSql()));
+            vo.setExecutionResult(runIfSafe(vo.isGenerated(), vo.getSql(),
+                    vo.getReferencedTables(), vo.getReferencedColumns()));
         }
 
         return vo;
@@ -117,7 +119,8 @@ public class MesSqlService {
     /**
      * 生成成功则校验并执行；各前置条件不满足时返回 SKIPPED/BLOCKED 结果。
      */
-    private SqlExecutionResult runIfSafe(boolean generated, String sql) {
+    private SqlExecutionResult runIfSafe(boolean generated, String sql,
+                                         List<String> referencedTables, List<String> referencedColumns) {
         if (!generated || sql == null || sql.isBlank()) {
             return SqlExecutionResult.builder()
                     .execType("SKIPPED")
@@ -147,7 +150,19 @@ public class MesSqlService {
                     .build();
         }
 
-        // 3. 只读执行（Oracle 行数封顶）
+        // 3. schema 校验（防臆造第二道闸）：引用的表/字段必须真实存在，否则拦截不执行
+        SqlSchemaValidator.SchemaCheckResult schemaCheck =
+                SqlSchemaValidator.validate(mesJdbcTemplate, referencedTables, referencedColumns);
+        if (!schemaCheck.isPassed()) {
+            log.warn("MES 取数 schema 校验拦截：{}", schemaCheck.getMessage());
+            return SqlExecutionResult.builder()
+                    .execType("BLOCKED")
+                    .success(false)
+                    .errorMessage(schemaCheck.getMessage())
+                    .build();
+        }
+
+        // 4. 只读执行（Oracle 行数封顶）
         return executeSelect(safety.getNormalizedSql());
     }
 

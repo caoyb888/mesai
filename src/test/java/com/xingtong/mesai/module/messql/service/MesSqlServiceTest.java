@@ -159,6 +159,9 @@ class MesSqlServiceTest {
         row.put("COIL_NO", "HC202607010001");
         rows.add(row);
         when(jdbc.queryForList(anyString())).thenReturn(rows);
+        // schema 校验的元数据查询（all_tab_columns，带参数重载）：表与字段均存在
+        when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("all_tab_columns"),
+                org.mockito.ArgumentMatchers.<Object>any())).thenReturn(buildMetaRows("SHR_HCOIL_ROLLING_RSLT", "COIL_NO", "HEAT_NO"));
         ReflectionTestUtils.setField(mesSqlService, "mesJdbcTemplate", jdbc);
 
         MesSqlVO vo = mesSqlService.query(req(true));
@@ -172,6 +175,43 @@ class MesSqlServiceTest {
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(jdbc).queryForList(sqlCaptor.capture());
         assertThat(sqlCaptor.getValue()).contains("ROWNUM").contains(sql);
+    }
+
+    @Test
+    void query_引用不存在字段_被schema校验拦截_BLOCKED() {
+        // 近义臆造场景：真实列为 PROD_TOT_JDG_DTM，模型生成了 PROD_JDG_DTM
+        String sql = "SELECT PROD_NO, PROD_JDG_DTM FROM SQM_TOT_JDG_RSLT";
+        Map<String, Object> resp = mockResp(true, sql);
+        resp.put("referenced_tables", new ArrayList<>(Arrays.asList("SQM_TOT_JDG_RSLT")));
+        resp.put("referenced_columns", new ArrayList<>(Arrays.asList("PROD_NO", "PROD_JDG_DTM")));
+        when(restTemplate.postForObject(anyString(), any(), eq(Map.class))).thenReturn(resp);
+
+        JdbcTemplate jdbc = org.mockito.Mockito.mock(JdbcTemplate.class);
+        // 元数据中只有真实列 PROD_TOT_JDG_DTM，没有臆造的 PROD_JDG_DTM
+        when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("all_tab_columns"),
+                org.mockito.ArgumentMatchers.<Object>any())).thenReturn(buildMetaRows("SQM_TOT_JDG_RSLT", "PROD_NO", "PROD_TOT_JDG_DTM"));
+        ReflectionTestUtils.setField(mesSqlService, "mesJdbcTemplate", jdbc);
+
+        MesSqlVO vo = mesSqlService.query(req(true));
+
+        SqlExecutionResult exec = vo.getExecutionResult();
+        assertThat(exec.getExecType()).isEqualTo("BLOCKED");
+        assertThat(exec.isSuccess()).isFalse();
+        assertThat(exec.getErrorMessage()).contains("防臆造拦截").contains("PROD_JDG_DTM");
+        // 被拦截时不得触碰业务 SQL 执行（单参 queryForList 零调用）
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never()).queryForList(anyString());
+    }
+
+    /** 构造 all_tab_columns 元数据行（TABLE_NAME/COLUMN_NAME 为大写列标签，与 Oracle 一致）*/
+    private List<Map<String, Object>> buildMetaRows(String table, String... columns) {
+        List<Map<String, Object>> meta = new ArrayList<>();
+        for (String c : columns) {
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("TABLE_NAME", table);
+            r.put("COLUMN_NAME", c);
+            meta.add(r);
+        }
+        return meta;
     }
 
     @Test

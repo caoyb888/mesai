@@ -31,6 +31,7 @@ from app.models import (
     GatewayRequest, Message,
 )
 from app.services.rag_service import get_rag_service, RagDocument
+from app.services.code_dict import get_code_dict_service
 from app.services.token_service import get_token_service, TokenBudgetService
 from app.routers.gateway import chat as gateway_chat
 
@@ -89,6 +90,35 @@ def _retrieve(question: str, top_n: int) -> list[RagDocument]:
             seen.add(d.doc_id)
             merged.append(d)
     return merged[:top_n]
+
+
+def _inject_code_dict(question: str, docs: list[RagDocument]) -> list[RagDocument]:
+    """
+    代码字典定向注入（铁律 9 的弹药供给）。
+
+    扫描问题与检索卡片内容中的大写标识符，凡命中 SCO_CODE_DETAIL 代码组的，
+    把该组的可用码值作为一条补充上下文追加（列名=代码组逐字约定，无向量歧义）。
+    字典不可用（CSV 缺失/加载失败）时原样返回，降级不阻断主链路。
+    """
+    cds = get_code_dict_service()
+    if cds is None:
+        return docs
+    groups = cds.lookup_in_texts([question] + [d.content for d in docs])
+    if not groups:
+        return docs
+    content = (
+        "[代码字典] 以下代码字段的可用码值（源自 SCO_CODE_DETAIL，"
+        "对这些字段过滤时必须使用码值而非中文标签）：\n"
+        + cds.format_groups(groups)
+    )
+    injected = RagDocument(
+        doc_id="code_dict:injected",
+        content=content,
+        distance=0.0,
+        metadata={"source": "SCO_CODE_DETAIL 代码字典", "type": "code_dict"},
+    )
+    log.info("[MES取数] 代码字典注入 groups=%d (%s)", len(groups), "/".join(groups.keys()))
+    return docs + [injected]
 
 
 def _to_context_docs(docs: list[RagDocument]) -> list[ContextDoc]:
@@ -187,6 +217,7 @@ async def mes_sql(
     # ── 1. RAG 检索（本地 embedding，不消耗外部 Token）──────────────
     try:
         docs = _retrieve(request.question, top_n)
+        docs = _inject_code_dict(request.question, docs)
     except Exception as e:
         log.error("[MES取数] RAG 检索失败 err=%s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"知识库检索失败：{str(e)}")
