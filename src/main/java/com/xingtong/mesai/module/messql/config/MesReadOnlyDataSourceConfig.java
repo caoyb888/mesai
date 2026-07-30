@@ -67,6 +67,9 @@ public class MesReadOnlyDataSourceConfig {
         ds.setConnectionTimeout(10_000);
         // 只读声明：驱动/连接层拒绝任何写操作，是应用层 SQL 校验之外的第二道防线
         ds.setReadOnly(true);
+        // 会话默认 schema 指向 MESAPUSER：AI 生成的 SQL 按知识库规范不带 schema 前缀，
+        // 只读账号若无此设置会因限定名缺失报 ORA-00942（等效于逐表建同义词，但零数据库对象开销）
+        ds.setConnectionInitSql("ALTER SESSION SET CURRENT_SCHEMA=MESAPUSER");
         log.info("MES 只读数据源已初始化（read-only）：{}", maskUrl(url));
         return ds;
     }
