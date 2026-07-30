@@ -29,6 +29,8 @@ PROD_TOT_JDG_GRD,9,不合格,불합격,,Y
 PROD_TOT_JDG_GRD,3,停用项,정지,,N
 JDG_REQ_GRD,A,必检,필검,,Y
 JDG_REQ_GRD,B,抽检,추출검사,,Y
+PROD_NO,1,,,,Y
+PROD_NO,2,,,,Y
 """
 
 
@@ -63,6 +65,14 @@ def test_lookup_max_groups_cap(csv_path):
     text = "PROD_TOT_JDG_GRD 和 JDG_REQ_GRD 都出现"
     groups = svc.lookup_in_texts([text], max_groups=1)
     assert len(groups) == 1
+
+
+def test_lookup_prioritizes_code_suffix_groups(csv_path):
+    """代码类后缀组优先：PROD_NO 噪声组不得挤占 _GRD 组名额"""
+    svc = CodeDictService(csv_path)
+    text = "PROD_NO 在前，PROD_TOT_JDG_GRD 和 JDG_REQ_GRD 在后"
+    groups = svc.lookup_in_texts([text], max_groups=2)
+    assert set(groups.keys()) == {"PROD_TOT_JDG_GRD", "JDG_REQ_GRD"}
 
 
 def test_format_groups_renders_value_label_pairs(csv_path):

@@ -32,6 +32,10 @@ _TOKEN_RE = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b")
 MAX_GROUPS = 5
 MAX_VALUES_PER_GROUP = 40
 
+# 代码类字段后缀（优先注入）：命中这些后缀的代码组语义价值最高；
+# 其余组（如 PROD_NO 这类“编号碰巧同名为代码组”的噪声组）仅在名额有余时补充
+_CODE_SUFFIXES = ("_CD", "_TY", "_GRD", "_YN", "_FG", "_TP", "_ST", "_FL")
+
 
 class CodeDictService:
     """代码字典查询服务：master_cd → [(码值, 中文, 韩文, 英文), ...]（仅启用项）"""
@@ -58,7 +62,8 @@ class CodeDictService:
                         max_groups: int = MAX_GROUPS) -> dict[str, list[tuple[str, str, str, str]]]:
         """
         从文本（问题 + RAG 卡片内容）中提取大写标识符，命中代码组的逐一返回。
-        按出现顺序收录，达到 max_groups 即停（问题排最前，优先级最高）。
+        收录后按“代码类后缀优先”排序取前 max_groups 个：
+        避免 PROD_NO 这类编号噪声组挤占 PROD_TOT_JDG_RSLT_TY 等关键组的名额。
         """
         found: dict[str, list[tuple[str, str, str, str]]] = {}
         for text in texts:
@@ -66,9 +71,9 @@ class CodeDictService:
                 group = token.upper()
                 if group in self._groups and group not in found:
                     found[group] = self._groups[group]
-                    if len(found) >= max_groups:
-                        return found
-        return found
+        prioritized = sorted(found.items(),
+                             key=lambda kv: 0 if kv[0].endswith(_CODE_SUFFIXES) else 1)
+        return dict(prioritized[:max_groups])
 
     @staticmethod
     def format_groups(groups: dict[str, list[tuple[str, str, str, str]]],
