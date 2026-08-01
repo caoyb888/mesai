@@ -148,6 +148,46 @@ class MesSqlServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void query_temperature透传与省略() {
+        String sql = "SELECT COIL_NO FROM SHR_HCOIL_ROLLING_RSLT";
+        when(restTemplate.postForObject(anyString(), any(), eq(Map.class))).thenReturn(mockResp(true, sql));
+
+        // 显式传 0（评测场景）：应透传给网关
+        MesSqlRequest withTemp = req(false);
+        withTemp.setTemperature(0.0);
+        mesSqlService.query(withTemp);
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        org.mockito.Mockito.verify(restTemplate).postForObject(anyString(), bodyCaptor.capture(), eq(Map.class));
+        Map<String, Object> sentBody = (Map<String, Object>) ((org.springframework.http.HttpEntity<?>) bodyCaptor.getValue()).getBody();
+        assertThat(sentBody).containsEntry("temperature", 0.0);
+
+        // 不传：请求体中不应携带 temperature 字段（由网关用默认值）
+        org.mockito.Mockito.clearInvocations(restTemplate);
+        mesSqlService.query(req(false));
+        org.mockito.Mockito.verify(restTemplate).postForObject(anyString(), bodyCaptor.capture(), eq(Map.class));
+        Map<String, Object> sentBody2 = (Map<String, Object>) ((org.springframework.http.HttpEntity<?>) bodyCaptor.getValue()).getBody();
+        assertThat(sentBody2).doesNotContainKey("temperature");
+        assertThat(sentBody2).doesNotContainKey("caller");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void query_caller透传_评测流量分账标识() {
+        String sql = "SELECT COIL_NO FROM SHR_HCOIL_ROLLING_RSLT";
+        when(restTemplate.postForObject(anyString(), any(), eq(Map.class))).thenReturn(mockResp(true, sql));
+
+        MesSqlRequest evalReq = req(false);
+        evalReq.setCaller("eval");
+        mesSqlService.query(evalReq);
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        org.mockito.Mockito.verify(restTemplate).postForObject(anyString(), bodyCaptor.capture(), eq(Map.class));
+        Map<String, Object> sentBody = (Map<String, Object>) ((org.springframework.http.HttpEntity<?>) bodyCaptor.getValue()).getBody();
+        assertThat(sentBody).containsEntry("caller", "eval");
+    }
+
+    @Test
     void query_数据源已配置_执行SELECT并Oracle行数封顶() {
         String sql = "SELECT COIL_NO FROM SHR_HCOIL_ROLLING_RSLT";
         when(restTemplate.postForObject(anyString(), any(), eq(Map.class))).thenReturn(mockResp(true, sql));

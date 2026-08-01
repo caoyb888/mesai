@@ -219,6 +219,12 @@ public class MesSqlService {
         if (req.getTopN() != null) {
             body.put("top_n", req.getTopN());
         }
+        if (req.getTemperature() != null) {
+            body.put("temperature", req.getTemperature());
+        }
+        if (req.getCaller() != null && !req.getCaller().isBlank()) {
+            body.put("caller", req.getCaller());
+        }
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
