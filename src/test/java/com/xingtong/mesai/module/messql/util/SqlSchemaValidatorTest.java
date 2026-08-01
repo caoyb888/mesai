@@ -128,4 +128,40 @@ class SqlSchemaValidatorTest {
 
         assertThat(result.isPassed()).isTrue();
     }
+
+    @Test
+    void validate_伪列与表达式残留_跳过不误拦() {
+        // SYSDATE / COUNT(*) / * 是 referenced_columns 常见噪声，不是真实列（基线实测误拦 Q04/Q33/Q35）
+        JdbcTemplate jdbc = mockJdbc(metaRows("SSD_ORDER_LINE", "ORD_NO"));
+
+        SqlSchemaValidator.SchemaCheckResult result = SqlSchemaValidator.validate(
+                jdbc, Arrays.asList("SSD_ORDER_LINE"),
+                Arrays.asList("ORD_NO", "SYSDATE", "COUNT(*)", "*", "ROWNUM"));
+
+        assertThat(result.isPassed()).isTrue();
+    }
+
+    @Test
+    void validate_带点条目为包级过程_不按表校验() {
+        // 包级存储过程（PKG.PROC）不是基表，交由执行层判定（基线实测 Q40）
+        JdbcTemplate jdbc = mockJdbc(Collections.emptyList());
+
+        SqlSchemaValidator.SchemaCheckResult result = SqlSchemaValidator.validate(
+                jdbc, Arrays.asList("BSIM_BP_FINE_CK_PROD_CONF.PR_F_ADJUST_CURR_INV"),
+                Arrays.asList("COUNT(*)"));
+
+        assertThat(result.isPassed()).isTrue();
+    }
+
+    @Test
+    void validate_真实臆造仍拦截_过滤不影响拦截能力() {
+        JdbcTemplate jdbc = mockJdbc(metaRows("SQM_TOT_JDG_RSLT", "PROD_NO"));
+
+        SqlSchemaValidator.SchemaCheckResult result = SqlSchemaValidator.validate(
+                jdbc, Arrays.asList("SQM_TOT_JDG_RSLT"),
+                Arrays.asList("PROD_NO", "SYSDATE", "PROD_JDG_DTM"));
+
+        assertThat(result.isPassed()).isFalse();
+        assertThat(result.getUnknownColumns()).containsExactly("PROD_JDG_DTM");
+    }
 }

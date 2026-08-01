@@ -35,6 +35,18 @@ public final class SqlSchemaValidator {
     /** MES 业务表属主（与知识库/只读账号 CURRENT_SCHEMA 约定一致）*/
     private static final String MES_OWNER = "MESAPUSER";
 
+    /** 纯标识符（表/列名合法字符）：含括号、星号、空格的条目（如 COUNT(*)、*）不是列名，直接跳过 */
+    private static final java.util.regex.Pattern IDENTIFIER =
+            java.util.regex.Pattern.compile("^[A-Z0-9_$#]+$");
+
+    /**
+     * Oracle 伪列/内置常量：不是真实列，LLM 误列入 referenced_columns 时不参与校验
+     * （如 SYSDATE 被当字段核对会误拦合法 SQL）
+     */
+    private static final Set<String> PSEUDO_COLUMNS = Set.of(
+            "SYSDATE", "SYSTIMESTAMP", "CURRENT_DATE", "CURRENT_TIMESTAMP",
+            "ROWNUM", "ROWID", "LEVEL", "USER");
+
     private SqlSchemaValidator() {
     }
 
@@ -48,8 +60,8 @@ public final class SqlSchemaValidator {
      */
     public static SchemaCheckResult validate(JdbcTemplate mesJdbcTemplate,
                                              List<String> tables, List<String> columns) {
-        List<String> tableNames = normalize(tables);
-        List<String> columnNames = normalize(columns);
+        List<String> tableNames = normalizeTables(tables);
+        List<String> columnNames = normalizeColumns(columns);
 
         // 无引用清单（generated=true 但模型未给出元数据）：无从校验，放行由执行层兜底
         if (tableNames.isEmpty()) {
@@ -108,6 +120,36 @@ public final class SqlSchemaValidator {
             }
         }
         return new ArrayList<>(result);
+    }
+
+    /**
+     * 表名归一化：剔除含「.」的条目。
+     * 带点条目是包级存储过程（如 BSIM_BP_FINE_CK_PROD_CONF.PR_F_XXX），不是基表；
+     * 其 SQL 是否可执行交由执行层判定，不在此按表校验（否则误拦/误分类）。
+     */
+    private static List<String> normalizeTables(List<String> tables) {
+        List<String> result = new ArrayList<>();
+        for (String t : normalize(tables)) {
+            if (!t.contains(".")) {
+                result.add(t);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 列名归一化：剔除非纯标识符条目（COUNT(*)、* 等表达式残留）与 Oracle 伪列
+     * （SYSDATE 等）。这些是 LLM 填写 referenced_columns 时的常见噪声，
+     * 不是真实列，参与核对会误拦合法 SQL。
+     */
+    private static List<String> normalizeColumns(List<String> columns) {
+        List<String> result = new ArrayList<>();
+        for (String c : normalize(columns)) {
+            if (IDENTIFIER.matcher(c).matches() && !PSEUDO_COLUMNS.contains(c)) {
+                result.add(c);
+            }
+        }
+        return result;
     }
 
     /**
