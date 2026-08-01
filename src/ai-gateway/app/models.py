@@ -183,6 +183,9 @@ class MesSqlRequest(BaseModel):
     caller: str = Field("mes_sql", description="调用来源模块标识")
     max_tokens: Optional[int] = Field(1200, ge=64, le=4096, description="最大生成 Token 数")
     temperature: float = Field(0.1, ge=0.0, le=1.0, description="生成温度，默认 0.1（取数场景求确定性）")
+    retry_feedback: Optional["RetryFeedback"] = Field(
+        None, description="自纠错重试反馈（B2.1）：携带上轮失败 SQL+原因+真实列清单时，按修正模式生成",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -191,6 +194,22 @@ class MesSqlRequest(BaseModel):
                 {"question": "统计每个牌号的板坯数量，按数量倒序"},
             ]
         }
+    )
+
+
+class RetryFeedback(BaseModel):
+    """
+    自纠错重试反馈（REQ-MES-AI-20260730-002 B2.1）。
+
+    后端在「schema 校验失败 / 执行 ORA 错误」时，把失败 SQL、失败原因与
+    涉及表的真实列清单（已从 all_tab_columns 裁剪）回传，网关将其作为
+    补充上下文驱动 LLM 修正重生成。每轮重试仍过完整安全校验链。
+    """
+    failed_sql: str = Field(..., max_length=4000, description="上一轮执行/校验失败的 SQL")
+    error_message: str = Field(..., max_length=1000, description="失败原因（ORA 错误或 schema 拦截原因）")
+    real_schema: str = Field(
+        "", max_length=8000,
+        description="涉及表的真实列清单（Java 侧已按 F6.3 裁剪），格式 TABLE(COL TYPE, ...)",
     )
 
 

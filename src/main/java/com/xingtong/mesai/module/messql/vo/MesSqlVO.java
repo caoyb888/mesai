@@ -61,4 +61,10 @@ public class MesSqlVO {
 
     /** AI 接口响应耗时（毫秒）*/
     private int aiResponseTimeMs;
+
+    /**
+     * 自纠错重试次数（REQ-MES-AI-20260730-002 B2.1）。
+     * 0 = 首轮即通过/未重试；>0 = 实际发生的重试轮数（上限由 mes.sql.retry.max-rounds 控制）。
+     */
+    private int retryCount;
 }

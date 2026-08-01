@@ -19,6 +19,7 @@ MES 取数接口路由（自然语言 → Oracle 只读 SELECT 生成）
 """
 
 import json
+import os
 import time
 import logging
 from typing import Annotated, Optional
@@ -32,6 +33,7 @@ from app.models import (
 )
 from app.services.rag_service import get_rag_service, RagDocument
 from app.services.code_dict import get_code_dict_service
+from app.services.schema_linker import get_schema_linker
 from app.services.token_service import get_token_service, TokenBudgetService
 from app.routers.gateway import chat as gateway_chat
 
@@ -68,6 +70,22 @@ _MES_SQL_SYSTEM = """你是芯智云匠项目的 MES 数据查询工程师，服
 }"""
 
 
+def _system_prompt() -> str:
+    """
+    系统 Prompt 选择。
+
+    默认返回正式铁律版。环境变量 MES_SQL_RELAX_RULES=true 时返回**去掉铁律 6/8/9 的对照版**——
+    仅供 REQ-MES-AI-20260730-002 F3.1 方式 B（端到端自纠错验收：在弱约束下重放历史失败案例，
+    验证重试循环能自行修正）使用，禁止常态开启。
+    """
+    if os.environ.get("MES_SQL_RELAX_RULES", "").strip().lower() in ("1", "true", "yes"):
+        import re as _re
+        lines = _MES_SQL_SYSTEM.splitlines()
+        kept = [l for l in lines if not _re.match(r"^[689]\. ", l.strip())]
+        return "\n".join(kept)
+    return _MES_SQL_SYSTEM
+
+
 def _retrieve(question: str, top_n: int) -> list[RagDocument]:
     """
     从 MES 理解卡片集合检索表 + 存储过程上下文（auto 混合）。
@@ -90,6 +108,27 @@ def _retrieve(question: str, top_n: int) -> list[RagDocument]:
             seen.add(d.doc_id)
             merged.append(d)
     return merged[:top_n]
+
+
+def _inject_schema_linking(question: str, docs: list[RagDocument]) -> list[RagDocument]:
+    """
+    Schema Linking 注入（B2.2）：相关表的最小列子集（列名+真实类型）置于上下文最前。
+    开关默认关闭（SCHEMA_LINKING_ENABLED，G 段：须 F5 档位 B 复测后才默认开）。
+    """
+    linker = get_schema_linker()
+    if linker is None:
+        return docs
+    linked = linker.link(question, docs)
+    if not linked:
+        return docs
+    injected = RagDocument(
+        doc_id="schema_linking:injected",
+        content=linked,
+        distance=0.0,
+        metadata={"source": "data_dictionary 列级结构", "type": "schema_linking"},
+    )
+    log.info("[MES取数] SchemaLinking 注入 docs=%d", len(docs) + 1)
+    return [injected] + docs
 
 
 def _inject_code_dict(question: str, docs: list[RagDocument]) -> list[RagDocument]:
@@ -136,15 +175,31 @@ def _to_context_docs(docs: list[RagDocument]) -> list[ContextDoc]:
     return result
 
 
-def _build_user_message(question: str, docs: list[RagDocument]) -> str:
+def _build_user_message(question: str, docs: list[RagDocument],
+                        retry_feedback=None) -> str:
     """拼装含 RAG 上下文的用户消息（STANDARD_TEMPLATE §上下文注入）"""
     rag = get_rag_service()
     context = rag.format_context(docs)
-    return (
-        f"【知识库上下文（S3 理解卡片，标签驱动 hybrid 检索 Top-{len(docs)}）】\n"
-        f"{context}\n\n"
-        f"【取数需求】\n{question}"
-    )
+    parts = [
+        f"【知识库上下文（S3 理解卡片，标签驱动 hybrid 检索 Top-{len(docs)}）】\n{context}"
+    ]
+    # 自纠错重试（B2.1）：携带上轮失败信息时，追加修正指令段。
+    # 注意：error_message 可能含 ORA 原文（携带数据值），本消息整体仍过网关脱敏门（F6.2）。
+    if retry_feedback is not None:
+        feedback = (
+            "【上轮失败反馈（自纠错重试）】\n"
+            f"上轮生成的 SQL：{retry_feedback.failed_sql}\n"
+            f"失败原因：{retry_feedback.error_message}\n"
+        )
+        if retry_feedback.real_schema:
+            feedback += f"涉及表的真实列清单（以此为准修正）：\n{retry_feedback.real_schema}\n"
+        feedback += (
+            "请根据失败原因修正 SQL：仅使用真实列清单中存在的表/字段（逐字一致），"
+            "其余生成铁律不变。"
+        )
+        parts.append(feedback)
+    parts.append(f"【取数需求】\n{question}")
+    return "\n\n".join(parts)
 
 
 def _extract_json(content: str) -> Optional[dict]:
@@ -217,6 +272,7 @@ async def mes_sql(
     # ── 1. RAG 检索（本地 embedding，不消耗外部 Token）──────────────
     try:
         docs = _retrieve(request.question, top_n)
+        docs = _inject_schema_linking(request.question, docs)
         docs = _inject_code_dict(request.question, docs)
     except Exception as e:
         log.error("[MES取数] RAG 检索失败 err=%s", e, exc_info=True)
@@ -232,8 +288,9 @@ async def mes_sql(
         temperature=request.temperature,
         max_tokens=request.max_tokens,
         messages=[
-            Message(role="system", content=_MES_SQL_SYSTEM),
-            Message(role="user", content=_build_user_message(request.question, docs)),
+            Message(role="system", content=_system_prompt()),
+            Message(role="user", content=_build_user_message(
+                request.question, docs, retry_feedback=request.retry_feedback)),
         ],
     )
     gw_response = await gateway_chat(gw_request, token_service, settings)

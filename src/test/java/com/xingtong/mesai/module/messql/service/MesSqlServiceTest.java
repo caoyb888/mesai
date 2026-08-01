@@ -249,9 +249,131 @@ class MesSqlServiceTest {
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("TABLE_NAME", table);
             r.put("COLUMN_NAME", c);
+            r.put("DATA_TYPE", "VARCHAR2");
+            r.put("DATA_LENGTH", 20);
             meta.add(r);
         }
         return meta;
+    }
+
+    // ── 自纠错重试循环（REQ-MES-AI-20260730-002 B2.1/F3/F4）──────────
+
+    /** 开启重试并注入只读数据源（元数据含真实列）*/
+    private JdbcTemplate setupRetryEnv(String table, String... realColumns) {
+        JdbcTemplate jdbc = org.mockito.Mockito.mock(JdbcTemplate.class);
+        org.mockito.Mockito.lenient().when(jdbc.queryForList(
+                org.mockito.ArgumentMatchers.contains("all_tab_columns"),
+                org.mockito.ArgumentMatchers.<Object>any()))
+                .thenReturn(buildMetaRows(table, realColumns));
+        ReflectionTestUtils.setField(mesSqlService, "mesJdbcTemplate", jdbc);
+        ReflectionTestUtils.setField(mesSqlService, "retryEnabled", true);
+        ReflectionTestUtils.setField(mesSqlService, "retryMaxRounds", 3);
+        ReflectionTestUtils.setField(mesSqlService, "retryTimeoutMs", 60000L);
+        ReflectionTestUtils.setField(mesSqlService, "feedbackColsPerTable", 40);
+        return jdbc;
+    }
+
+    @Test
+    void query_首轮schema拦截_重试第2轮成功_RETRY成功收敛() {
+        // 首轮：臆造列 PROD_JDG_DTM → schema 拦截；次轮：修正为真实列 → 执行成功
+        Map<String, Object> bad = mockResp(true, "SELECT PROD_NO, PROD_JDG_DTM FROM SQM_TOT_JDG_RSLT");
+        bad.put("referenced_tables", new ArrayList<>(Arrays.asList("SQM_TOT_JDG_RSLT")));
+        bad.put("referenced_columns", new ArrayList<>(Arrays.asList("PROD_NO", "PROD_JDG_DTM")));
+        Map<String, Object> good = mockResp(true, "SELECT PROD_NO, PROD_TOT_JDG_DTM FROM SQM_TOT_JDG_RSLT");
+        good.put("referenced_tables", new ArrayList<>(Arrays.asList("SQM_TOT_JDG_RSLT")));
+        good.put("referenced_columns", new ArrayList<>(Arrays.asList("PROD_NO", "PROD_TOT_JDG_DTM")));
+        when(restTemplate.postForObject(anyString(), any(), eq(Map.class))).thenReturn(bad, good);
+
+        JdbcTemplate jdbc = setupRetryEnv("SQM_TOT_JDG_RSLT", "PROD_NO", "PROD_TOT_JDG_DTM");
+        List<Map<String, Object>> rows = new ArrayList<>();
+        rows.add(new LinkedHashMap<>(Map.of("PROD_NO", "P1")));
+        when(jdbc.queryForList(anyString())).thenReturn(rows);
+
+        MesSqlVO vo = mesSqlService.query(req(true));
+
+        assertThat(vo.getRetryCount()).isEqualTo(1);
+        assertThat(vo.getSql()).contains("PROD_TOT_JDG_DTM");
+        assertThat(vo.getExecutionResult().getExecType()).isEqualTo("SELECT");
+        assertThat(vo.getExecutionResult().isSuccess()).isTrue();
+
+        // 第 2 次网关调用必须携带 retry_feedback（失败 SQL + 真实列清单）
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        org.mockito.Mockito.verify(restTemplate, org.mockito.Mockito.times(2))
+                .postForObject(anyString(), bodyCaptor.capture(), eq(Map.class));
+        Map<String, Object> retryBody = (Map<String, Object>)
+                ((org.springframework.http.HttpEntity<?>) bodyCaptor.getAllValues().get(1)).getBody();
+        Map<String, Object> feedback = (Map<String, Object>) retryBody.get("retry_feedback");
+        assertThat(feedback).isNotNull();
+        assertThat(feedback.get("failed_sql").toString()).contains("PROD_JDG_DTM");
+        assertThat(feedback.get("error_message").toString()).contains("防臆造拦截");
+        assertThat(feedback.get("real_schema").toString()).contains("PROD_TOT_JDG_DTM");
+    }
+
+    @Test
+    void query_重试耗尽_返回未生成且不返回未通过SQL() {
+        // 连续生成不同的臆造列（避免提前终止），3 轮全部失败
+        Map<String, Object> bad1 = mockResp(true, "SELECT BAD_COL_A FROM SQM_TOT_JDG_RSLT");
+        bad1.put("referenced_tables", new ArrayList<>(Arrays.asList("SQM_TOT_JDG_RSLT")));
+        bad1.put("referenced_columns", new ArrayList<>(Arrays.asList("BAD_COL_A")));
+        Map<String, Object> bad2 = mockResp(true, "SELECT BAD_COL_B FROM SQM_TOT_JDG_RSLT");
+        bad2.put("referenced_tables", new ArrayList<>(Arrays.asList("SQM_TOT_JDG_RSLT")));
+        bad2.put("referenced_columns", new ArrayList<>(Arrays.asList("BAD_COL_B")));
+        Map<String, Object> bad3 = mockResp(true, "SELECT BAD_COL_C FROM SQM_TOT_JDG_RSLT");
+        bad3.put("referenced_tables", new ArrayList<>(Arrays.asList("SQM_TOT_JDG_RSLT")));
+        bad3.put("referenced_columns", new ArrayList<>(Arrays.asList("BAD_COL_C")));
+        when(restTemplate.postForObject(anyString(), any(), eq(Map.class)))
+                .thenReturn(bad1, bad2, bad3);
+
+        setupRetryEnv("SQM_TOT_JDG_RSLT", "PROD_NO", "PROD_TOT_JDG_DTM");
+
+        MesSqlVO vo = mesSqlService.query(req(true));
+
+        // F3.3：耗尽后不返回未通过校验的 SQL
+        assertThat(vo.isGenerated()).isFalse();
+        assertThat(vo.getSql()).isEmpty();
+        assertThat(vo.getUnanswerableReason()).contains("自纠错");
+        assertThat(vo.getRetryCount()).isEqualTo(2);
+        org.mockito.Mockito.verify(restTemplate, org.mockito.Mockito.times(3))
+                .postForObject(anyString(), any(), eq(Map.class));
+    }
+
+    @Test
+    void query_连续两轮同一错误_提前终止() {
+        // 两轮均 ORA-00904 "SPEC_CD"（referenced 元数据只声明真实列，schema 校验放行，
+        // 执行期才报错）→ 第 2 轮同错误即终止，不打满 3 轮
+        Map<String, Object> bad = mockResp(true, "SELECT COIL_NO, SPEC_CD FROM SHR_HCOIL_ROLLING_RSLT");
+        bad.put("referenced_columns", new ArrayList<>(Arrays.asList("COIL_NO")));
+        when(restTemplate.postForObject(anyString(), any(), eq(Map.class))).thenReturn(bad);
+
+        JdbcTemplate jdbc = setupRetryEnv("SHR_HCOIL_ROLLING_RSLT", "COIL_NO", "RLG_THK");
+        when(jdbc.queryForList(anyString())).thenThrow(
+                new org.springframework.jdbc.BadSqlGrammarException("test", "sql",
+                        new java.sql.SQLSyntaxErrorException("ORA-00904: \"SPEC_CD\": invalid identifier")));
+
+        MesSqlVO vo = mesSqlService.query(req(true));
+
+        assertThat(vo.isGenerated()).isFalse();
+        assertThat(vo.getRetryCount()).isEqualTo(1);   // 仅重试 1 次即提前终止
+        org.mockito.Mockito.verify(restTemplate, org.mockito.Mockito.times(2))
+                .postForObject(anyString(), any(), eq(Map.class));
+    }
+
+    @Test
+    void query_retryDisabled_不重试() {
+        Map<String, Object> bad = mockResp(true, "SELECT PROD_JDG_DTM FROM SQM_TOT_JDG_RSLT");
+        bad.put("referenced_tables", new ArrayList<>(Arrays.asList("SQM_TOT_JDG_RSLT")));
+        bad.put("referenced_columns", new ArrayList<>(Arrays.asList("PROD_JDG_DTM")));
+        when(restTemplate.postForObject(anyString(), any(), eq(Map.class))).thenReturn(bad);
+
+        setupRetryEnv("SQM_TOT_JDG_RSLT", "PROD_NO", "PROD_TOT_JDG_DTM");
+        ReflectionTestUtils.setField(mesSqlService, "retryEnabled", false);
+
+        MesSqlVO vo = mesSqlService.query(req(true));
+
+        assertThat(vo.getExecutionResult().getExecType()).isEqualTo("BLOCKED");
+        assertThat(vo.getRetryCount()).isEqualTo(0);
+        org.mockito.Mockito.verify(restTemplate, org.mockito.Mockito.times(1))
+                .postForObject(anyString(), any(), eq(Map.class));
     }
 
     @Test

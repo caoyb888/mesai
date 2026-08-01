@@ -159,6 +159,10 @@ function cellText(val) {
             <el-icon class="is-loading"><Loading /></el-icon>
             <span>AI 正在检索知识库并生成 Oracle SELECT，请稍候...</span>
           </div>
+          <!-- F4.3 重试可感知提示：执行开启时，失败会进入自纠错重试（最多 3 轮，可能需数十秒） -->
+          <div v-if="form.executeSql" class="loading-tip retry-tip">
+            <span>若首次生成的 SQL 未通过校验，系统将自动校验并修正查询（最多重试 3 轮，全程约需 1 分钟），请勿重复提交</span>
+          </div>
         </el-card>
 
         <!-- 空状态 -->
@@ -183,6 +187,9 @@ function cellText(val) {
                   </el-tag>
                   <el-tag size="small" type="info">{{ result.tokensUsed }} tokens</el-tag>
                   <el-tag size="small">{{ result.aiResponseTimeMs }}ms</el-tag>
+                  <el-tag v-if="result.retryCount > 0" size="small" type="warning">
+                    自纠错重试 {{ result.retryCount }} 轮
+                  </el-tag>
                   <el-tag v-if="result.model" size="small" type="warning">{{ result.model }}</el-tag>
                 </div>
                 <el-button v-if="result.generated" size="small" :icon="'CopyDocument'" @click="copySql">复制 SQL</el-button>
