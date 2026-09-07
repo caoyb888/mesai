@@ -1,0 +1,158 @@
+{
+  "SQM_CHEM_JDG.CHEM_JUDG": {
+    "table": "SQM_CHEM_JDG",
+    "column": "CHEM_JUDG",
+    "values": [
+      {
+        "v": "",
+        "n": 375271
+      },
+      {
+        "v": "P",
+        "n": 112885
+      },
+      {
+        "v": "F",
+        "n": 4269
+      }
+    ]
+  },
+  "SMS_SLAB.SLAB_STS": {
+    "table": "SMS_SLAB",
+    "column": "SLAB_STS",
+    "values": [
+      {
+        "v": "2",
+        "n": 147538
+      },
+      {
+        "v": "3",
+        "n": 31
+      }
+    ]
+  },
+  "SPR_PLATE.APPR_JDG_YN": {
+    "table": "SPR_PLATE",
+    "column": "APPR_JDG_YN",
+    "values": [
+      {
+        "v": "Y",
+        "n": 186892
+      },
+      {
+        "v": "",
+        "n": 139190
+      },
+      {
+        "v": "N",
+        "n": 13
+      }
+    ]
+  },
+  "SQM_JDG_HLD.HOLD_MTL_STS_CD": {
+    "table": "SQM_JDG_HLD",
+    "column": "HOLD_MTL_STS_CD",
+    "values": [
+      {
+        "v": "1",
+        "n": 41939
+      }
+    ]
+  },
+  "SQM_TOT_JDG_RSLT.PROD_TOT_JDG_GRD": {
+    "table": "SQM_TOT_JDG_RSLT",
+    "column": "PROD_TOT_JDG_GRD",
+    "values": [
+      {
+        "v": "1",
+        "n": 90888
+      }
+    ]
+  },
+  "SSD_ORDER_LINE.ORD_LN_STS": {
+    "table": "SSD_ORDER_LINE",
+    "column": "ORD_LN_STS",
+    "values": [
+      {
+        "v": "K",
+        "n": 7956
+      },
+      {
+        "v": "E",
+        "n": 2578
+      },
+      {
+        "v": "X",
+        "n": 750
+      },
+      {
+        "v": "C",
+        "n": 136
+      },
+      {
+        "v": "B",
+        "n": 67
+      },
+      {
+        "v": "H",
+        "n": 12
+      },
+      {
+        "v": "D",
+        "n": 8
+      },
+      {
+        "v": "A",
+        "n": 4
+      },
+      {
+        "v": "F",
+        "n": 4
+      },
+      {
+        "v": "Z",
+        "n": 1
+      }
+    ]
+  },
+  "SYD_DISP_ORD.DORD_STS": {
+    "table": "SYD_DISP_ORD",
+    "column": "DORD_STS",
+    "values": [
+      {
+        "v": "F",
+        "n": 1219
+      },
+      {
+        "v": "B",
+        "n": 500
+      },
+      {
+        "v": "C",
+        "n": 16
+      },
+      {
+        "v": "Z",
+        "n": 7
+      },
+      {
+        "v": "A",
+        "n": 6
+      }
+    ]
+  },
+  "SMS_HEAT.HEAT_STS": {
+    "table": "SMS_HEAT",
+    "column": "HEAT_STS",
+    "values": [
+      {
+        "v": "",
+        "n": 15472
+      },
+      {
+        "v": "2",
+        "n": 10506
+      }
+    ]
+  }
+}

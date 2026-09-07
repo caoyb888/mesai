@@ -58,6 +58,10 @@ _MES_SQL_SYSTEM = """你是芯智云匠项目的 MES 数据查询工程师，服
 7. 如果知识库上下文中找不到能满足需求的表或字段，不要编造，必须将 generated 置为 false 并在 unanswerable_reason 说明缺少什么。
 8. 字段名必须与上下文逐字一致，禁止任何形式的“近似改写”（漏词/加词/简写，如把 PROD_TOT_JDG_DTM 写成 PROD_JDG_DTM）。
 9. 代码类字段（*_CD / *_TY / *_GRD 等）的过滤值必须使用上下文中给出的代码值；需求中的中文业务词（如“不合格”）须先映射为代码值再过滤，上下文中无映射时在 explanation 中说明，禁止直接拿中文标签对代码字段做等值过滤。
+10. 禁止添加问题未明确要求的过滤条件：不要凭空加入状态、标志、归档、有效性、是否出炉等（如 *_FL / *_STS / *_YN / ARCHIVE_* 等）或任何问题未提及的过滤；仅按问题字面所述的条件过滤。宁可少加条件，也不臆造。
+11. 只返回问题所问的列，不多不少。聚合/分布类问题只返回「分组列 + 计数或度量」两类；严禁额外的“总计/合计”列（如 SUM(COUNT(*)) OVER()）、GROUPING 汇总行、或问题未提及的附加列。明细类问题只列问题点名的字段，不要附加无关列。
+12. 计数默认用 COUNT(*)；仅当问题明确要求“不同/去重/多少种”时才用 COUNT(DISTINCT)。重量/金额/单重等度量按库中原单位与原精度返回，不要擅自换算单位（如千克↔吨、除以 1000）或额外四舍五入。
+13. 时间过滤：同一业务动作若存在多个日期列，优先选择与该动作直接对应的“汇总/完成/创建”日期列（如“完工”用 *_SUMUP / *_FIN 类汇总日、“炉次/记录产生”用 CRT_TM 创建时间），避免误用“计划时点”或“明细工序时点”列；无法判断时在 explanation 说明所选列及理由。
 
 只输出一个 JSON 对象（不要包裹任何额外文字或 Markdown 围栏），结构如下：
 {
@@ -157,6 +161,44 @@ def _inject_code_dict(question: str, docs: list[RagDocument]) -> list[RagDocumen
         metadata={"source": "SCO_CODE_DETAIL 代码字典", "type": "code_dict"},
     )
     log.info("[MES取数] 代码字典注入 groups=%d (%s)", len(groups), "/".join(groups.keys()))
+    return docs + [injected]
+
+
+import functools as _functools
+
+@_functools.lru_cache(maxsize=1)
+def _load_value_index() -> dict:
+    """值索引（低基数码值/状态/判定列的真实 DISTINCT 值）。缺失则空 → 注入降级。"""
+    import os as _os, json as _json
+    p = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "services", "value_index.json")
+    try:
+        return _json.loads(open(p, encoding="utf-8").read())
+    except Exception as e:
+        log.warning("[MES取数] 值索引加载失败：%s", e); return {}
+
+
+def _inject_value_index(question: str, docs: list[RagDocument]) -> list[RagDocument]:
+    """对检索命中表的码值/状态/判定列，注入其真实 DISTINCT 值（防模型臆造码值，铁律 9 弹药）。"""
+    idx = _load_value_index()
+    if not idx:
+        return docs
+    tabs = set()
+    for d in docs:
+        sf = (d.metadata.get("source_file") or "").replace(".md", "")
+        if sf:
+            tabs.add(sf.upper())
+    lines = []
+    for key, e in idx.items():
+        if e.get("table", "").upper() in tabs:
+            vals = ", ".join((v["v"] if v["v"] != "" else "(空)") for v in e.get("values", [])[:30])
+            lines.append(f"- {e['table']}.{e['column']} 实际码值：{vals}")
+    if not lines:
+        return docs
+    content = ("[值索引] 以下码值/状态/判定列在库中的真实取值（对这些列做等值/IN 过滤时必须用下列真实值，"
+               "中文业务词须映射为对应码值，禁止臆造或用中文标签）：\n" + "\n".join(lines))
+    injected = RagDocument(doc_id="value_index:injected", content=content, distance=0.0,
+                           metadata={"source": "value_index 值索引", "type": "value_index"})
+    log.info("[MES取数] 值索引注入 columns=%d", len(lines))
     return docs + [injected]
 
 
@@ -274,6 +316,7 @@ async def mes_sql(
         docs = _retrieve(request.question, top_n)
         docs = _inject_schema_linking(request.question, docs)
         docs = _inject_code_dict(request.question, docs)
+        docs = _inject_value_index(request.question, docs)
     except Exception as e:
         log.error("[MES取数] RAG 检索失败 err=%s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"知识库检索失败：{str(e)}")
