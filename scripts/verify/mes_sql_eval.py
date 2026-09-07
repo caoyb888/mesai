@@ -138,9 +138,74 @@ def result_signature(rows, from_api: bool) -> collections.Counter:
     return sig
 
 
+def _is_num(v) -> bool:
+    return isinstance(v, (int, float, Decimal)) and not isinstance(v, bool)
+
+
+def _to_dec(v) -> Decimal:
+    return v if isinstance(v, Decimal) else Decimal(repr(v))
+
+
+def _decimals(d: Decimal) -> int:
+    e = d.normalize().as_tuple().exponent
+    return max(0, -e)
+
+
+def _num_equal(a, b) -> bool:
+    """数值等价：取双方较粗小数位（上限 NUM_PRECISION）后比较——吸收 golden round()、
+    模型未 round 之类**纯展示差异**；对真实不同的值仍判不等（口径修订 AI-MES-EVAL-口径-2026-001）。"""
+    try:
+        da, db = _to_dec(a), _to_dec(b)
+    except (InvalidOperation, ValueError):
+        return str(a) == str(b)
+    p = min(_decimals(da), _decimals(db), NUM_PRECISION)
+    q = Decimal(1).scaleb(-p)
+    return da.quantize(q) == db.quantize(q)
+
+
+def _nonnum_key(vals) -> tuple:
+    """行的非数值骨架（数值位标 N）：用于在按列对齐前先按非数值列精确配桶。"""
+    out = []
+    for v in vals:
+        if _is_num(v):
+            out.append("«N»")
+        elif v is None:
+            out.append("«NULL»")
+        else:
+            s = str(v)
+            out.append("«EMPTY»" if s == "" else s.rstrip())
+    return tuple(out)
+
+
+def _row_vals(row, from_api):
+    return list(row.values()) if from_api else list(row)
+
+
 def results_equivalent(api_rows: list, db_rows: list) -> bool:
-    """结果集等价判定：行多重集合一致（允许行序差异，F1.2）"""
-    return result_signature(api_rows, from_api=True) == result_signature(db_rows, from_api=False)
+    """结果集等价判定（口径修订版）：
+    ① 先按原精确多重集比对（NUM_PRECISION 定点）——完全一致直接判等，保持既有行为；
+    ② 否则做**数值容差匹配**：列按位置对齐、非数值列精确、数值列按 _num_equal（较粗小数位）配对，
+       行多重集合一一匹配则判等。仅放宽 round()/小数位展示差异，不放宽列数/列序/非数值内容/真实数值差。"""
+    if result_signature(api_rows, from_api=True) == result_signature(db_rows, from_api=False):
+        return True
+    A = [_row_vals(r, True) for r in api_rows]
+    B = [_row_vals(r, False) for r in db_rows]
+    if len(A) != len(B):
+        return False
+    used = [False] * len(B)
+    for ra in A:
+        ka = _nonnum_key(ra)
+        hit = False
+        for j, rb in enumerate(B):
+            if used[j] or len(ra) != len(rb) or _nonnum_key(rb) != ka:
+                continue
+            if all(_num_equal(x, y) for x, y in zip(ra, rb) if _is_num(x) and _is_num(y)):
+                used[j] = True
+                hit = True
+                break
+        if not hit:
+            return False
+    return True
 
 
 # ── 单题判定 ─────────────────────────────────────────────────
