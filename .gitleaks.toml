@@ -101,6 +101,8 @@ paths = [
     '''.*Test\.java''',
     '''src/test/.*''',
     '''src/.*/tests/.*\.py''',
+    '''scripts/.*/tests/.*\.py''',            # 脚本层测试夹具（脱敏/解析器测试样例内网IP/工号，非真实密钥）
+    '''scripts/kb-ingest/proc_parser.py''',    # 解析器内嵌示例 PL/SQL 与站点码注释（演示数据，非真实密钥）
     '''assertions/.*''',
     '''scripts/init/.*\.sql''',
 ]
