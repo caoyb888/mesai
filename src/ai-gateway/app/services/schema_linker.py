@@ -34,7 +34,7 @@ _TABLE_MARK_RE = re.compile(r"\[表\]\s*([A-Za-z][A-Za-z0-9_]*)")
 
 MAX_TABLES = 4
 MAX_COLS_PER_TABLE = 60
-_CODE_SUFFIXES = ("_CD", "_TY", "_GRD", "_YN", "_FG", "_TP", "_ST", "_FL", "_DTM", "_DT", "_NO")
+_CODE_SUFFIXES = ("_CD", "_TY", "_GRD", "_YN", "_FG", "_TP", "_ST", "_FL", "_DTM", "_DT", "_TM", "_NO")
 
 
 class SchemaLinker:
@@ -100,11 +100,15 @@ class SchemaLinker:
                            if c[0] in question_tokens or c[0].endswith(_CODE_SUFFIXES)]
             rest = [c for c in cols if c not in prioritized]
             selected = (prioritized + rest)[:max_cols]
-            col_str = ", ".join(f"{name} {type_str}" for name, type_str, _, _ in selected)
+            def _fmt(c):
+                name, type_str, _len, comment = c
+                comment = (comment or "").strip()
+                return f"{name} {type_str}" + (f"（{comment}）" if comment and comment != "空" else "")
+            col_str = ", ".join(_fmt(c) for c in selected)
             suffix = f"（共 {len(cols)} 列，仅列前 {len(selected)} 列）" if len(cols) > max_cols else ""
             sections.append(f"- {table}{suffix}：{col_str}")
         return ("[Schema Linking] 相关表的真实结构（生成 SQL 只能使用下列表与列，"
-                "注意列的真实类型）：\n" + "\n".join(sections))
+                "注意列的真实类型与括号内业务含义）：\n" + "\n".join(sections))
 
 
 def _default_dict_path() -> str:

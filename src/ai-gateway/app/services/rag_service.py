@@ -61,6 +61,7 @@ class RagService:
         # {表名: {label, aliases}} / {父过程名: {label, aliases}} 供 hybrid 词法匹配
         self._labels = self._load_labels("mes_table_labels.json")
         self._proc_labels = self._load_labels("mes_proc_labels.json")
+        self._biz = self._load_labels("mes_business_anchors.json")  # P1 业务锚点词典
 
     @staticmethod
     def _load_labels(filename: str = "mes_table_labels.json") -> dict:
@@ -226,6 +227,8 @@ class RagService:
         cand = set(vec_rank) | set(lex_rank)
         fused = sorted(cand, key=lambda t: -(1.0 / (K + vec_rank.get(t, BIG))
                                              + 1.0 / (K + lex_rank.get(t, BIG))))
+        if kind == "table":
+            fused = self._business_rerank(question, fused, anchors)
         out: list[RagDocument] = []
         for t in fused[:n]:
             if t in best_doc:
@@ -233,6 +236,43 @@ class RagService:
             elif t in anchors:   # 仅词法命中：用锚点文本构造结果
                 out.append(RagDocument(doc_id=t, content=anchors[t], distance=0.5,
                                        metadata={"source_file": f"{t}.md", "chunk_type": f"s3_{kind}"}))
+        return out
+
+    def _business_rerank(self, question: str, fused: list, anchors: dict) -> list:
+        """P1 重排：命中业务锚点词的规范表置顶（按命中词数）；取数场景下计划/标准/设计表降级。
+        锚点词典缺失则原样返回（降级不阻断）。AI-MES-GW-P1-2026-001。"""
+        biz = self._biz or {}
+        alist = biz.get("anchors", [])
+        if not alist:
+            return fused
+        q = question or ""
+        matched = []          # (table, 匹配词总长, 首现位置)
+        demote_set = set()
+        for a in alist:
+            t = a.get("table")
+            hits = [w for w in a.get("terms", []) if w and w in q]
+            if hits and (t in anchors or t in fused):
+                tot = sum(len(w) for w in hits)
+                pos = min(q.find(w) for w in hits)
+                matched.append((t, tot, pos))
+                demote_set.update(a.get("demote", []))
+        matched.sort(key=lambda x: (-x[1], x[2]))   # 具体度高优先，其次首现靠前
+        boosted = [t for t, _, _ in matched]
+        boosted_set = set(boosted)
+        demote_set -= boosted_set                    # 命中锚点自身不压低
+        markers = biz.get("plan_std_markers", [])
+        want_plan = any(w in q for w in biz.get("plan_intent_words", []))
+        def is_plan(t):
+            u = (t or "").upper()
+            return any(m in u for m in markers)
+        def demoted(t):
+            return t in demote_set or (not want_plan and bool(markers) and is_plan(t))
+        rest = [t for t in fused if t not in boosted_set]
+        rest = [t for t in rest if not demoted(t)] + [t for t in rest if demoted(t)]
+        seen = set(); out = []
+        for t in boosted + rest:
+            if t and t not in seen:
+                seen.add(t); out.append(t)
         return out
 
     def retrieve_for_mes_table(self, question: str, top_n: Optional[int] = None) -> list[RagDocument]:
