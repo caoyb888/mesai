@@ -6,7 +6,7 @@ AI 网关请求/响应数据模型
 """
 
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Message(BaseModel):
@@ -72,8 +72,8 @@ class DemoRequest(BaseModel):
         description="生成模式：sql（查询SQL）/ dml（变更SQL）/ fe_component（Vue组件）",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [
                 {
                     "question": "查询过去7天内所有状态为OPEN的工单，按创建时间倒序排列，只取前20条",
@@ -89,6 +89,7 @@ class DemoRequest(BaseModel):
                 },
             ]
         }
+    )
 
 
 class ContextDoc(BaseModel):
@@ -107,4 +108,124 @@ class DemoResponse(BaseModel):
     explanation: str = Field(..., description="AI 对生成代码的说明")
     context_docs: list[ContextDoc] = Field(default_factory=list, description="使用的知识库上下文片段")
     tokens_used: int
+    response_time_ms: int
+
+
+# ── MES 数据问答接口模型（真实 MES S3 理解知识库）─────────────────
+
+class MesQaRequest(BaseModel):
+    """
+    MES 数据问答请求。
+
+    面向真实 MES 库（钢板/卷材钢厂）的表结构与存储过程问答：
+    先从 S3 理解卡片集合 RAG 检索（标签驱动 hybrid），再由 LLM 基于检索到的
+    真实表/字段/过程作答，严格接地防臆造。
+    """
+    question: str = Field(..., min_length=5, max_length=500, description="自然语言业务问题")
+    kind: str = Field(
+        "auto",
+        description="检索范围：auto（表+过程混合，默认）/ table（仅表卡片）/ proc（仅存储过程卡片）",
+    )
+    top_n: Optional[int] = Field(
+        None, ge=1, le=10, description="RAG 检索条数，不传则用配置默认（预算降级时自动缩减）",
+    )
+    task_no: str = Field(
+        "REQ-MES-AI-20260716-001",
+        description="需求单编号，用于 Token 成本归集，格式 REQ-MES-AI-YYYYMMDD-NNN",
+    )
+    caller: str = Field("mes_qa", description="调用来源模块标识")
+    max_tokens: Optional[int] = Field(800, ge=64, le=4096, description="最大生成 Token 数")
+    temperature: float = Field(0.2, ge=0.0, le=1.0, description="生成温度，默认 0.2（问答场景求稳）")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"question": "热轧钢卷的轧制实绩数据保存在哪张表？主键是什么？", "kind": "table"},
+                {"question": "质保书是通过哪些存储过程签发的？主流程是怎样的？", "kind": "proc"},
+                {"question": "板坯是按炉次管理的吗？相关核心表有哪些？", "kind": "auto"},
+            ]
+        }
+    )
+
+
+class MesQaResponse(BaseModel):
+    """MES 数据问答响应"""
+    question: str
+    kind: str = Field(..., description="实际生效的检索范围（auto/table/proc）")
+    answer: str = Field(..., description="AI 基于知识库上下文生成的回答")
+    context_docs: list[ContextDoc] = Field(
+        default_factory=list, description="本次作答引用的知识库上下文片段（含相关度）",
+    )
+    provider: str = Field(..., description="实际使用的 AI 提供商")
+    model: str = Field(..., description="实际使用的模型名称")
+    tokens_used: int = Field(..., description="本次调用消耗 Token 总数")
+    response_time_ms: int
+
+
+# ── MES 取数（NL → Oracle SELECT）接口模型 ─────────────────────────
+
+class MesSqlRequest(BaseModel):
+    """
+    MES 取数请求：自然语言 → Oracle 只读 SELECT 生成。
+
+    先从 S3 理解卡片集合 RAG 检索真实表/字段/存储过程，再由 LLM 严格接地
+    生成 Oracle 方言 SELECT（只读、禁 SELECT *、禁臆造表名/字段名）。
+    SQL 的安全校验与只读执行在 Spring Boot 后端完成，网关侧只负责生成。
+    """
+    question: str = Field(..., min_length=5, max_length=500, description="自然语言取数需求")
+    top_n: Optional[int] = Field(
+        None, ge=1, le=10, description="RAG 检索条数，不传则用配置默认（预算降级时自动缩减）",
+    )
+    task_no: str = Field(
+        "REQ-MES-AI-20260716-001",
+        description="需求单编号，用于 Token 成本归集，格式 REQ-MES-AI-YYYYMMDD-NNN",
+    )
+    caller: str = Field("mes_sql", description="调用来源模块标识")
+    max_tokens: Optional[int] = Field(1200, ge=64, le=4096, description="最大生成 Token 数")
+    temperature: float = Field(0.1, ge=0.0, le=1.0, description="生成温度，默认 0.1（取数场景求确定性）")
+    retry_feedback: Optional["RetryFeedback"] = Field(
+        None, description="自纠错重试反馈（B2.1）：携带上轮失败 SQL+原因+真实列清单时，按修正模式生成",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"question": "查询最近一个月热轧钢卷的轧制实绩，包含卷号、炉次号、轧制日期"},
+                {"question": "统计每个牌号的板坯数量，按数量倒序"},
+            ]
+        }
+    )
+
+
+class RetryFeedback(BaseModel):
+    """
+    自纠错重试反馈（REQ-MES-AI-20260730-002 B2.1）。
+
+    后端在「schema 校验失败 / 执行 ORA 错误」时，把失败 SQL、失败原因与
+    涉及表的真实列清单（已从 all_tab_columns 裁剪）回传，网关将其作为
+    补充上下文驱动 LLM 修正重生成。每轮重试仍过完整安全校验链。
+    """
+    failed_sql: str = Field(..., max_length=4000, description="上一轮执行/校验失败的 SQL")
+    error_message: str = Field(..., max_length=1000, description="失败原因（ORA 错误或 schema 拦截原因）")
+    real_schema: str = Field(
+        "", max_length=8000,
+        description="涉及表的真实列清单（Java 侧已按 F6.3 裁剪），格式 TABLE(COL TYPE, ...)",
+    )
+
+
+class MesSqlResponse(BaseModel):
+    """MES 取数响应：生成的 Oracle SELECT + 接地元数据"""
+    question: str
+    generated: bool = Field(..., description="是否成功生成 SQL（false 表示知识库依据不足，见 unanswerable_reason）")
+    sql: str = Field("", description="生成的 Oracle 只读 SELECT（未生成时为空串）")
+    explanation: str = Field("", description="对查询逻辑、涉及表/字段、关键条件的中文说明")
+    referenced_tables: list[str] = Field(default_factory=list, description="SQL 引用的表名（英文，须来自知识库上下文）")
+    referenced_columns: list[str] = Field(default_factory=list, description="SQL 引用的关键字段名（英文）")
+    unanswerable_reason: Optional[str] = Field(None, description="未能生成 SQL 的原因（知识库无对应表/字段时填写）")
+    context_docs: list[ContextDoc] = Field(
+        default_factory=list, description="本次生成引用的知识库上下文片段（含相关度）",
+    )
+    provider: str = Field(..., description="实际使用的 AI 提供商")
+    model: str = Field(..., description="实际使用的模型名称")
+    tokens_used: int = Field(..., description="本次调用消耗 Token 总数")
     response_time_ms: int

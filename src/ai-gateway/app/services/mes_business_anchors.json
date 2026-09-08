@@ -1,0 +1,22 @@
+{
+  "_doc": "MES 取数业务词典 v2（P1）：业务词→规范实绩表，命中即融合后置顶；demote 为该实体下应被压低的近义/结果变体表。多锚点命中按 匹配词总长(具体度) 降序、首现位置 升序 排序。AI-MES-GW-P1-2026-001",
+  "anchors": [
+    {"table": "SMS_HEAT",             "terms": ["炉次", "炼钢", "冶炼", "炉数", "炼了多少炉", "冶炼炉数"], "demote": ["SMS_RSLT_BOF","SMS_RSLT_LF","SMS_RSLT_HEAT","SMS_RSLT_HEATING","SMS_RSLT_HEAT_OXG","SMS_RSLT_FIN_CUT"]},
+    {"table": "SMS_SLAB",             "terms": ["板坯", "钢坯", "坯料", "板坯切割", "板坯单重", "板坯状态", "切割板坯"], "demote": ["SMS_RSLT_CUT","SMS_RSLT_FIN_CUT","SMS_SLAB_BY_HEAT"]},
+    {"table": "SPR_PLATE",            "terms": ["钢板", "中厚板", "板材", "钢板完工", "钢板规格", "成品钢板", "钢板记录"], "demote": []},
+    {"table": "SPR_FCE_CHARGE",       "terms": ["加热炉", "装炉", "装炉量", "炉装", "装炉块数"], "demote": ["SPR_HEAT_FCE_RSLT","SSM_HEAT_FCE_RSLT","SMS_RSLT_HEATING"]},
+    {"table": "SPR_DEFECT",           "terms": ["表面缺陷", "缺陷代码", "缺陷记录", "缺陷"], "demote": ["SCR_DEFECT"]},
+    {"table": "SQM_CHEM_JDG",         "terms": ["化学判定", "化学分析", "化学成分", "元素判定", "化学不合格", "化学合格", "不合格率", "判定不合格"], "demote": ["SQM_CHEM_RSLT","SQM_CHEM_REQ_HEAD","SQM_WSP_MTC_CHEM_INF","SQM_SMP_DETAIL"]},
+    {"table": "SQM_TOT_JDG_RSLT",     "terms": ["综合判定", "产品判定", "总判定", "判定等级", "等级分布"], "demote": ["SQM_TOT_JDG_RSLT_HIST"]},
+    {"table": "SQM_JDG_HLD",          "terms": ["质量封锁", "封锁记录", "封锁", "HOLD"], "demote": ["SPR_HOLD"]},
+    {"table": "SQM_MECH_RSLT",        "terms": ["力学试验", "力学性能", "拉伸试验", "冲击试验", "力学结果", "力学"], "demote": ["SQM_WSP_MTC_MECH_INF_2","SQM_WSP_MTC_MECH_INF_3","SQM_MTC_MECH"]},
+    {"table": "SQM_MTC_REQ",          "terms": ["质保书", "质保书申请", "质保", "材质证明"], "demote": []},
+    {"table": "SSD_ORDER_LINE",       "terms": ["订单行", "订单明细", "牌号", "订单量", "多少行", "订单行数", "订购", "订单牌号"], "demote": ["SIM_RM_PUR_RELEASE","SHR_HCOIL_MASTER","SSD_ORDER_HEAD"]},
+    {"table": "SSD_ORDER_HEAD",       "terms": ["订单头", "订单张数", "订单总数", "多少张订单", "几张订单"], "demote": []},
+    {"table": "SYD_DISP_ORD",         "terms": ["提货单", "客户提货", "发货", "提货"], "demote": []},
+    {"table": "SYD_PROD_RECEIPT",     "terms": ["成品入库", "入库量", "产品入库", "入库"], "demote": []},
+    {"table": "SYD_INVENTORY_DETAIL", "terms": ["库存明细", "库存", "在库"], "demote": []}
+  ],
+  "plan_std_markers": ["SCH_", "_PLAN", "_STD", "_DESIGN", "_LIMIT", "_REVISE", "_INST_"],
+  "plan_intent_words": ["计划", "标准", "设计", "指示", "排程", "排产"]
+}

@@ -10,7 +10,10 @@ RAG 检索服务（ChromaDB）
   - 返回 Top-N 文档片段，供 LLM Prompt 上下文注入
 """
 
+import re
+import json
 import logging
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
@@ -23,6 +26,8 @@ log = logging.getLogger(__name__)
 # 知识库集合名称映射
 COLLECTION_DB = "itsm_db_structure"
 COLLECTION_API = "itsm_api_docs"
+# 真实 MES S3 理解卡片集合（表理解 + 过程理解，入库见 ingest_s3_cards.py）
+COLLECTION_MES_S3 = "mes_s3_understanding"
 
 
 @dataclass
@@ -52,12 +57,72 @@ class RagService:
         except Exception as e:
             log.error("ChromaDB/Embedding 初始化失败：%s", e)
             raise
+        self._cache: dict = {}
+        # {表名: {label, aliases}} / {父过程名: {label, aliases}} 供 hybrid 词法匹配
+        self._labels = self._load_labels("mes_table_labels.json")
+        self._proc_labels = self._load_labels("mes_proc_labels.json")
+        self._biz = self._load_labels("mes_business_anchors.json")  # P1 业务锚点词典
+
+    @staticmethod
+    def _load_labels(filename: str = "mes_table_labels.json") -> dict:
+        """加载中文标签（build_table_labels/build_proc_labels 产），失败则空 → hybrid 降级纯向量"""
+        try:
+            p = Path(__file__).parent / filename
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            log.warning("标签加载失败（%s），hybrid 降级纯向量：%s", filename, e)
+            return {}
+
+    # 二次切分片段 stem <PKG>.<PROC>_pNN → 父过程 <PKG>.<PROC>（非片段原样返回）
+    _PNN_RE = re.compile(r"_p\d+$", re.I)
+
+    @classmethod
+    def _proc_parent(cls, asset: str) -> str:
+        """把过程卡片身份（可能是片段）归并到父过程，供 proc 父级分组去重与标签匹配"""
+        return cls._PNN_RE.sub("", asset or "")
+
+    @staticmethod
+    def _bigrams(s: str) -> set:
+        """字符 bigram 集（去空白/标点/下划线）——中文无分词依赖的词法特征"""
+        s = re.sub(r"[\s\W_]+", "", s or "")
+        return {s[i:i + 2] for i in range(len(s) - 1)} if len(s) >= 2 else ({s} if s else set())
+
+    def _label_bigrams(self, kind: str = "table") -> dict:
+        """{标签键: 标签+别名+键 的 bigram 集}（table→表名键；proc→父过程键）"""
+        ck = f"lab_{kind}"
+        if ck not in self._cache:
+            labels = self._proc_labels if kind == "proc" else self._labels
+            self._cache[ck] = {
+                t: self._bigrams(o.get("label", "") + " " + " ".join(o.get("aliases", [])) + " " + t)
+                for t, o in labels.items()}
+        return self._cache[ck]
+
+    def _anchors(self, kind: str = "table") -> dict:
+        """{身份键: 锚点文本}（懒加载，供仅词法命中项构造返回文档）。
+        table→表名键；proc→父过程键（片段锚点按父归并，取先见的 :0 chunk）。"""
+        ck = f"anc_{kind}"
+        if ck not in self._cache:
+            anc = {}
+            try:
+                col = self._client.get_collection(COLLECTION_MES_S3)
+                got = col.get(where={"chunk_type": f"s3_{kind}"}, include=["documents", "metadatas"])
+                for cid, doc, md in zip(got["ids"], got["documents"], got["metadatas"]):
+                    if cid.endswith(":0"):
+                        key = md["source_file"].replace(".md", "")
+                        if kind == "proc":
+                            key = self._proc_parent(key)
+                        anc.setdefault(key, doc)   # 同父多片段取先见锚点
+            except Exception as e:
+                log.warning("锚点加载失败（%s）：%s", kind, e)
+            self._cache[ck] = anc
+        return self._cache[ck]
 
     def retrieve(
         self,
         query: str,
         collection_name: str,
         top_n: Optional[int] = None,
+        where: Optional[dict] = None,
     ) -> list[RagDocument]:
         """
         从指定集合检索与 query 最相关的 Top-N 文档
@@ -65,6 +130,7 @@ class RagService:
         :param query: 用户查询文本
         :param collection_name: ChromaDB 集合名称
         :param top_n: 返回条数，None 则使用配置默认值
+        :param where: 可选元数据过滤（如 {"chunk_type": "s3_table"}）
         :return: 按相关度排序的文档列表（最相关优先）
         """
         settings = get_settings()
@@ -79,11 +145,14 @@ class RagService:
         try:
             # 用多语言模型生成查询向量，与入库时保持一致
             query_vector = self._embed_model.encode([query])[0].tolist()
-            results = col.query(
-                query_embeddings=[query_vector],
-                n_results=min(n, col.count()),
-                include=["documents", "metadatas", "distances"],
-            )
+            query_kwargs = {
+                "query_embeddings": [query_vector],
+                "n_results": min(n, col.count()),
+                "include": ["documents", "metadatas", "distances"],
+            }
+            if where:
+                query_kwargs["where"] = where
+            results = col.query(**query_kwargs)
         except Exception as e:
             log.error("ChromaDB 查询失败 collection=%s query=%s err=%s", collection_name, query, e)
             return []
@@ -112,6 +181,108 @@ class RagService:
         """针对前端组件生成场景，从 ITSM API 文档集合检索上下文"""
         return self.retrieve(question, COLLECTION_API, top_n)
 
+    def retrieve_for_mes(self, question: str, top_n: Optional[int] = None,
+                         kind: Optional[str] = None) -> list[RagDocument]:
+        """
+        从真实 MES S3 理解卡片集合检索（表理解 + 过程理解）。**标签驱动 hybrid（词法+向量）**。
+
+        :param kind: "table" 只表卡片 / "proc" 只过程卡片 / None 混检
+
+        检索策略（治小向量模型对近义钢厂术语区分差）：
+          ① 向量：按身份去重 → 向量排序（table→表名；proc→**父过程**，二次切分片段按父归并）
+          ② 词法：查询与「中文标签+别名」做字符 bigram 重叠（干净短标签，高精度）→ 词法排序
+          ③ RRF 融合两路排序，返回 Top-N 不同身份
+        table 用表标签、proc 用过程标签；无对应标签或混检（kind=None）时退化为向量去重。
+        """
+        where = {"chunk_type": f"s3_{kind}"} if kind in ("table", "proc") else None
+        n = top_n or get_settings().rag_top_n
+        is_proc = kind == "proc"
+        labels = self._proc_labels if is_proc else self._labels
+
+        # ① 向量（按身份去重：proc 归并到父过程，避免同过程多片段挤占）
+        raw = self.retrieve(question, COLLECTION_MES_S3, top_n=max(n * 8, 30), where=where)
+        vec_rank: dict = {}
+        best_doc: dict = {}
+        for d in raw:
+            t = (d.metadata.get("source_file") or "").replace(".md", "")
+            if is_proc:
+                t = self._proc_parent(t)
+            if t and t not in vec_rank:
+                vec_rank[t] = len(vec_rank)
+                best_doc[t] = d
+
+        if kind not in ("table", "proc") or not labels:
+            return list(best_doc.values())[:n]
+
+        # ② 词法（标签 bigram 重叠，阈值≥2 抑噪）
+        qb = self._bigrams(question)
+        lex_scored = sorted(
+            ((t, len(qb & bg)) for t, bg in self._label_bigrams(kind).items() if len(qb & bg) >= 2),
+            key=lambda x: -x[1])
+        lex_rank = {t: i for i, (t, _) in enumerate(lex_scored)}
+
+        # ③ RRF 融合
+        K, BIG = 60, 10 ** 6
+        anchors = self._anchors(kind)
+        cand = set(vec_rank) | set(lex_rank)
+        fused = sorted(cand, key=lambda t: -(1.0 / (K + vec_rank.get(t, BIG))
+                                             + 1.0 / (K + lex_rank.get(t, BIG))))
+        if kind == "table":
+            fused = self._business_rerank(question, fused, anchors)
+        out: list[RagDocument] = []
+        for t in fused[:n]:
+            if t in best_doc:
+                out.append(best_doc[t])
+            elif t in anchors:   # 仅词法命中：用锚点文本构造结果
+                out.append(RagDocument(doc_id=t, content=anchors[t], distance=0.5,
+                                       metadata={"source_file": f"{t}.md", "chunk_type": f"s3_{kind}"}))
+        return out
+
+    def _business_rerank(self, question: str, fused: list, anchors: dict) -> list:
+        """P1 重排：命中业务锚点词的规范表置顶（按命中词数）；取数场景下计划/标准/设计表降级。
+        锚点词典缺失则原样返回（降级不阻断）。AI-MES-GW-P1-2026-001。"""
+        biz = self._biz or {}
+        alist = biz.get("anchors", [])
+        if not alist:
+            return fused
+        q = question or ""
+        matched = []          # (table, 匹配词总长, 首现位置)
+        demote_set = set()
+        for a in alist:
+            t = a.get("table")
+            hits = [w for w in a.get("terms", []) if w and w in q]
+            if hits and (t in anchors or t in fused):
+                tot = sum(len(w) for w in hits)
+                pos = min(q.find(w) for w in hits)
+                matched.append((t, tot, pos))
+                demote_set.update(a.get("demote", []))
+        matched.sort(key=lambda x: (-x[1], x[2]))   # 具体度高优先，其次首现靠前
+        boosted = [t for t, _, _ in matched]
+        boosted_set = set(boosted)
+        demote_set -= boosted_set                    # 命中锚点自身不压低
+        markers = biz.get("plan_std_markers", [])
+        want_plan = any(w in q for w in biz.get("plan_intent_words", []))
+        def is_plan(t):
+            u = (t or "").upper()
+            return any(m in u for m in markers)
+        def demoted(t):
+            return t in demote_set or (not want_plan and bool(markers) and is_plan(t))
+        rest = [t for t in fused if t not in boosted_set]
+        rest = [t for t in rest if not demoted(t)] + [t for t in rest if demoted(t)]
+        seen = set(); out = []
+        for t in boosted + rest:
+            if t and t not in seen:
+                seen.add(t); out.append(t)
+        return out
+
+    def retrieve_for_mes_table(self, question: str, top_n: Optional[int] = None) -> list[RagDocument]:
+        """MES 表/字段场景，仅检索表理解卡片"""
+        return self.retrieve_for_mes(question, top_n, kind="table")
+
+    def retrieve_for_mes_proc(self, question: str, top_n: Optional[int] = None) -> list[RagDocument]:
+        """MES 存储过程场景，仅检索过程逻辑卡片"""
+        return self.retrieve_for_mes(question, top_n, kind="proc")
+
     def format_context(self, docs: list[RagDocument]) -> str:
         """
         将检索到的文档列表格式化为 Prompt 上下文注入格式（STANDARD_TEMPLATE §2 规范）
@@ -121,8 +292,9 @@ class RagService:
 
         parts = []
         for i, doc in enumerate(docs, 1):
-            source = doc.metadata.get("source", "未知来源")
-            doc_type = doc.metadata.get("type", "unknown")
+            # 兼容 ITSM（source/type）与 S3 理解卡片（source_file/chunk_type）两套元数据
+            source = doc.metadata.get("source") or doc.metadata.get("source_file", "未知来源")
+            doc_type = doc.metadata.get("type") or doc.metadata.get("chunk_type", "unknown")
             parts.append(
                 f"--- 文档片段 {i}/{len(docs)} ---\n"
                 f"来源：{source} | 类型：{doc_type}\n"

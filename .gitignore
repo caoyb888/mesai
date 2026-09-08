@@ -28,6 +28,11 @@ vault-token
 *.jks
 *.key
 *.pfx
+# AI 平台密钥（运行时注入，严禁入库）——覆盖 kimikey / kimikkey.txt 等明文 key 文件
+kimikey*
+*kimikey*
+*api?key*.txt
+*apikey*.txt
 
 # ============================================================
 # Java / Maven / Spring Boot

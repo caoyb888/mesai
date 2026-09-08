@@ -28,6 +28,7 @@
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
         <mysql.version>8.0.33</mysql.version>
         <postgresql.version>42.6.0</postgresql.version>
+        <oracle.jdbc.version>23.4.0.24.05</oracle.jdbc.version>
         <jjwt.version>0.11.5</jjwt.version>
         <easyexcel.version>3.3.3</easyexcel.version>
         <lombok.version>1.18.30</lombok.version>
@@ -78,11 +79,21 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- ── MES 系统只读数据源：PostgreSQL 15.x（禁止写入）───── -->
+        <!-- ── ITSM 演示只读数据源：PostgreSQL 15.x（禁止写入）───── -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <version>${postgresql.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ── 真实 MES 系统只读数据源：Oracle 驱动（ojdbc11，JDK 11+，仅只读查询）─────
+             治理说明：本依赖用于 MES 取数接口连接真实 Oracle 只读库，
+             引入经技术负责人评审授权（CLAUDE.md §2）。未配置 MES_DB_URL 时不加载驱动。 -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <version>${oracle.jdbc.version}</version>
             <scope>runtime</scope>
         </dependency>
 

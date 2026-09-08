@@ -61,13 +61,16 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         包含重试逻辑：网络超时/连接错误最多重试 max_retries 次
         """
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        # kimi-k* 为推理模型：temperature 仅允许 1；正文前有 reasoning，需放大 max_tokens
+        _is_reasoning = str(self._model).startswith("kimi-k")
         kwargs = {
             "model": self._model,
             "messages": messages,
-            "temperature": request.temperature,
+            "temperature": 1 if _is_reasoning else request.temperature,
         }
-        if request.max_tokens:
-            kwargs["max_tokens"] = request.max_tokens
+        _mt = request.max_tokens or (2048 if _is_reasoning else 0)
+        if _mt:
+            kwargs["max_tokens"] = max(_mt, 2048) if _is_reasoning else _mt
 
         last_error = None
         for attempt in range(1, self._max_retries + 1):
@@ -80,7 +83,12 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 response = await self._client.chat.completions.create(**kwargs)
                 elapsed_ms = int((time.time() - t0) * 1000)
 
-                content = response.choices[0].message.content or ""
+                _msg = response.choices[0].message
+                content = _msg.content or ""
+                if not content and _is_reasoning:
+                    content = (getattr(_msg, "reasoning_content", None)
+                               or (getattr(_msg, "model_extra", None) or {}).get("reasoning_content")
+                               or "")
                 usage = response.usage
 
                 log.info(
